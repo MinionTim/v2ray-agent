@@ -882,7 +882,7 @@ installTools() {
     fi
 
     # 安装健康助手脚本
-    wget -qO /etc/v2ray-agent/healthKeeper.sh "${wgetShowProgressStatus}" --no-check-certificate "https://raw.githubusercontent.com/MinionTim/v2ray-agent/master/healthKeeper" 
+    wget -qO /etc/v2ray-agent/healthKeeper.sh "${wgetShowProgressStatus}" --no-check-certificate "https://raw.githubusercontent.com/MinionTim/v2ray-agent/master/healthKeeper.sh" 
     chmod +x /etc/v2ray-agent/healthKeeper.sh
     ln -sf /etc/v2ray-agent/healthKeeper.sh /usr/bin/vahealth
     local config="${HOME}/.vps-healthy"
@@ -1501,7 +1501,6 @@ installTLS() {
         echoContent green " ---> 检测到单域名证书"
         existsDomain=${tlsDomain}
     fi
-    echo "kkkk=${existsDomain}."
 
     if [[ "${existsDomain}" != "" ]]; then
         renewalTLS
@@ -6935,7 +6934,7 @@ menu() {
     echoContent green "作者: villey (原作者: mack-a, 基于版本v2.8.11)"
     echoContent green "当前版本：${VERSION} "
     echoContent green "Github: https://github.com/mack-a/v2ray-agent"
-    echoContent green "描述：八合一共存脚本 \c"
+    echoContent green "描述：八合一共存脚本"
     showInstallStatus
     checkWgetShowProgress
     echoContent red "=============================================================="

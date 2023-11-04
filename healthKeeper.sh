@@ -568,11 +568,7 @@ max_check_retry_count=2
 check_failed=0
 extra_nodes=""
 v2ray_agent_install_path="/etc/v2ray-agent/install.sh"
-# domain=$(jq -r .inbounds[0].settings.clients[0].add /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
 domain=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].myCurrentDomain /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
 port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
 
-# main "$@"
-info hello world
-
-text "123444"
+main "$@"
