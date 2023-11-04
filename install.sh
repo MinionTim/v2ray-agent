@@ -3,6 +3,7 @@
 # -------------------------------------------------------------
 # 检查系统
 export LANG=en_US.UTF-8
+VERSION=v1.0.0
 
 echoContent() {
     case $1 in
@@ -195,8 +196,10 @@ initVar() {
 
     localIP=
 
-    # 集成更新证书逻辑不再使用单独的脚本--RenewTLS
-    renewTLS=$1
+    # 启动参数startAction，配置该值后，可单独使用脚本，可选值：
+    # RenewTLS: 更新证书 
+    # autoSubscribe: 自动更新订阅 renewTLS
+    startAction=$1
 
     # tls安装失败后尝试的次数
     installTLSCount=
@@ -271,13 +274,11 @@ initVar() {
 readAcmeTLS() {
     if [[ -n "${currentHost}" ]]; then
         dnsTLSDomain=$(echo "${currentHost}" | cut -d'.' -f 2-)
-        # dnsTLSDomain="net4.sw87.eu.org"
-
     fi
     if [[ -d "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc" && -f "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.key" && -f "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.cer" ]]; then
         installDNSACMEStatus=true
     fi
-    echoContent v "readAcmeTLS, dnsTLSDomain: [${dnsTLSDomain}], currentHost: [${currentHost}], installDNSACMEStatus: ${installDNSACMEStatus}"
+    # echoContent v "readAcmeTLS, dnsTLSDomain: [${dnsTLSDomain}], currentHost: [${currentHost}], installDNSACMEStatus: ${installDNSACMEStatus}"
 }
 # 读取默认自定义端口
 readCustomPort() {
@@ -553,7 +554,7 @@ readConfigHostPathUUID() {
 
         # 安装
         if [[ -n "${frontingType}" ]]; then
-            currentHost=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].currentDomain ${configPath}${frontingType}.json)
+            currentHost=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].myCurrentDomain ${configPath}${frontingType}.json)
             currentAdd=$(jq -r .inbounds[0].settings.clients[0].add ${configPath}${frontingType}.json)
             if [[ "${currentAdd}" == "null" ]]; then
                 currentAdd=${currentHost}
@@ -579,7 +580,7 @@ readConfigHostPathUUID() {
 
         fi
     elif [[ "${coreInstallType}" == "2" ]]; then
-        currentHost=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].currentDomain ${configPath}${frontingType}.json)
+        currentHost=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].myCurrentDomain ${configPath}${frontingType}.json)
         currentAdd=$(jq -r .inbounds[0].settings.clients[0].add ${configPath}${frontingType}.json)
 
         if [[ "${currentAdd}" == "null" ]]; then
@@ -652,6 +653,7 @@ showInstallStatus() {
         if echo ${currentInstallProtocolType} | grep -q 8; then
             echoContent yellow "VLESS+Reality+gRPC \c"
         fi
+        echo ""
     fi
 }
 
@@ -879,6 +881,28 @@ installTools() {
         fi
     fi
 
+    # 安装健康助手脚本
+    wget -qO /etc/v2ray-agent/healthKeeper.sh "${wgetShowProgressStatus}" --no-check-certificate "https://raw.githubusercontent.com/MinionTim/v2ray-agent/master/healthKeeper" 
+    chmod +x /etc/v2ray-agent/healthKeeper.sh
+    ln -sf /etc/v2ray-agent/healthKeeper.sh /usr/bin/vahealth
+    local config="${HOME}/.vps-healthy"
+    if [[ ! -f "${config}" ]]; then
+       cat <<EOF >${config}
+{
+    "CloudFlare": {
+        "API_KEY": "",
+        "EMAIL":"",
+        "ZONE_ID":""
+    },
+
+    "LightSail": {
+        "G_INSTANCE_NAME": "",
+        "G_REGION": ""
+    }
+}
+EOF
+    fi
+
 }
 
 # 安装Nginx
@@ -1031,7 +1055,6 @@ initTLSNginxConfig() {
     else
         # 域名从第二段开始截取，作为DNS泛域名的根
         dnsTLSDomain=$(echo "${domain}" | cut -d'.' -f 2-)
-        echoContent v "GET DNS DOMAIN ==> domain: ${domain}, dnsTLSDomain: ${dnsTLSDomain}"
         customPortFunction
         # 修改配置
         handleNginx stop
@@ -1219,7 +1242,7 @@ server {
     server_name ${domain};
     root ${nginxStaticPath};
 
-    if ($host != "${domain}") {
+    if (\$host != "${domain}") {
         return 502;
     }
 
@@ -1361,15 +1384,8 @@ selectAcmeInstallSSL() {
 
 # 安装SSL证书
 acmeInstallSSL() {
-    echoContent v "acmeInstallSSL, dnsSSLStatus:[${dnsSSLStatus}],ssltype: [${sslType}], installSSLIPv6: [${installSSLIPv6}]"
-    echoContent v "acmeInstallSSL, tlsDomain: ${tlsDomain}, dnsTLSDomain: ${dnsTLSDomain}"
-    read -p "Pause...any key to continune..."
+    # echoContent v "acmeInstallSSL, dnsSSLStatus:[${dnsSSLStatus}],ssltype: [${sslType}], installSSLIPv6: [${installSSLIPv6}], tlsDomain: ${tlsDomain}, dnsTLSDomain: ${dnsTLSDomain}"
     if [[ "${dnsSSLStatus}" == "true" ]]; then
-        # echoContent v "acmeInstallSSL installed by dns. Step 1/2: for ${tlsDomain} with standalone."
-        # echoContent green " ---> 生成证书中. DNS, Step 1/2."
-        # sudo "$HOME/.acme.sh/acme.sh" --issue -d "${tlsDomain}" --standalone -k ec-256 --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
-
-        echoContent v "acmeInstallSSL installed by dns. Step 1/1: for *.${dnsTLSDomain} with dns."
         sudo "$HOME/.acme.sh/acme.sh" --issue -d "*.${dnsTLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
 
         local txtValue=
@@ -1402,11 +1418,9 @@ acmeInstallSSL() {
             fi
         fi
     else
-        echoContent v "acmeInstallSSL installed by standalone."
-        echoContent green " ---> 生成证书中.2"
+        echoContent green " ---> 生成证书中 (installed by standalone)"
         sudo "$HOME/.acme.sh/acme.sh" --issue -d "${tlsDomain}" --standalone -k ec-256 --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
         if [[ -d "$HOME/.acme.sh/${tlsDomain}_ecc" && -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.key" && -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.cer" ]]; then
-            echoContent v "installTLS, installing by standalone. copy to /etc/..."
             sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${tlsDomain}" --fullchainpath "/etc/v2ray-agent/tls/${tlsDomain}.crt" --keypath "/etc/v2ray-agent/tls/${tlsDomain}.key" --ecc >/dev/null
         fi
     fi
@@ -1477,7 +1491,7 @@ checkPort() {
 installTLS() {
     echoContent skyBlue "\n进度  $1/${totalProgress} : 申请TLS证书\n"
     local tlsDomain=${domain}
-    echoContent v "installTLS, tlsDomain: ${tlsDomain}, dnsTLSDomain: ${dnsTLSDomain}, installDNSACMEStatus: ${installDNSACMEStatus}"
+    # echoContent v "installTLS, tlsDomain: ${tlsDomain}, dnsTLSDomain: ${dnsTLSDomain}, installDNSACMEStatus: ${installDNSACMEStatus}"
     local existsDomain
 
     if [[ -f "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.crt" && -f "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.key" && -n $(cat "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.crt") ]] || [[ -d "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc" && -f "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.key" && -f "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.cer" ]]; then
@@ -1487,13 +1501,12 @@ installTLS() {
         echoContent green " ---> 检测到单域名证书"
         existsDomain=${tlsDomain}
     fi
+    echo "kkkk=${existsDomain}."
 
-    if [[ existsDomain != "" ]]; then
-        # checkTLStatus
+    if [[ "${existsDomain}" != "" ]]; then
         renewalTLS
 
         if [[ -z $(find /etc/v2ray-agent/tls/ -name "${existsDomain}.crt") ]] || [[ -z $(find /etc/v2ray-agent/tls/ -name "${existsDomain}.key") ]] || [[ -z $(cat "/etc/v2ray-agent/tls/${existsDomain}.crt") ]]; then
-            echoContent v "$HOME/.acme.sh目录下检测到证书，复制证书到etc目录下"
             sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${existsDomain}" --fullchainpath "/etc/v2ray-agent/tls/${existsDomain}.crt" --keypath "/etc/v2ray-agent/tls/${existsDomain}.key" --ecc >/dev/null
         else
             echoContent yellow " ---> 如未过期或者自定义证书请选择[n]\n"
@@ -1504,46 +1517,8 @@ installTLS() {
                 installTLS "$1"
             fi
         fi
-    # fi
-
-    # if [[ "${domainType}" != "FanYuMing" && -f "/etc/v2ray-agent/tls/${tlsDomain}.crt" && -f "/etc/v2ray-agent/tls/${tlsDomain}.key" && -n $(cat "/etc/v2ray-agent/tls/${tlsDomain}.crt") ]] || [[ "${domainType}" != "FanYuMing" && -d "$HOME/.acme.sh/${tlsDomain}_ecc" && -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.key" && -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.cer" ]]; then
-    #     echoContent green " ---> 检测到单域名证书"
-    #     # checkTLStatus
-    #     renewalTLS
-
-    #     if [[ -z $(find /etc/v2ray-agent/tls/ -name "${tlsDomain}.crt") ]] || [[ -z $(find /etc/v2ray-agent/tls/ -name "${tlsDomain}.key") ]] || [[ -z $(cat "/etc/v2ray-agent/tls/${tlsDomain}.crt") ]]; then
-    #         echoContent v "$HOME/.acme.sh目录下检测到证书，复制证书到etc目录下"
-    #         sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${tlsDomain}" --fullchainpath "/etc/v2ray-agent/tls/${tlsDomain}.crt" --keypath "/etc/v2ray-agent/tls/${tlsDomain}.key" --ecc >/dev/null
-    #     else
-    #         echoContent yellow " ---> 如未过期或者自定义证书请选择[n]\n"
-    #         read -r -p "是否重新安装？[y/n]:" reInstallStatus
-    #         if [[ "${reInstallStatus}" == "y" ]]; then
-    #             rm -rf /etc/v2ray-agent/tls/*
-    #             ls /etc/v2ray-agent/tls/
-    #             installTLS "$1"
-    #         fi
-    #     fi
-    # elif [[ "${domainType}" = "FanYuMing" && -f "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.crt" && -f "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.key" && -n $(cat "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.crt") ]] || [[ "${domainType}" = "FanYuMing" && -d "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc" && -f "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.key" && -f "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.cer" ]]; then
-    #     echoContent v " ---> 检测到通配符域名证书"
-    #     renewalTLS
-
-    #     if [[ -z $(find /etc/v2ray-agent/tls/ -name "*.${dnsTLSDomain}.crt") ]] || [[ -z $(find /etc/v2ray-agent/tls/ -name "*.${dnsTLSDomain}.key") ]] || [[ -z $(cat "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.crt") ]]; then
-    #         echoContent v "$HOME/.acme.sh目录下检测到证书，复制证书到etc目录下"
-    #         sudo "$HOME/.acme.sh/acme.sh" --installcert -d "*.${dnsTLSDomain}" --fullchainpath "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.crt" --keypath "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.key" --ecc >/dev/null
-    #     else
-    #         echoContent yellow " ---> 如未过期或者自定义证书请选择[n]\n"
-    #         read -r -p "是否重新安装？[y/n]:" reInstallStatus
-    #         if [[ "${reInstallStatus}" == "y" ]]; then
-    #             rm -rf /etc/v2ray-agent/tls/*
-    #             ls /etc/v2ray-agent/tls/
-    #             installTLS "$1"
-    #         fi
-    #     fi
-
-    # elif [[ -d "$HOME/.acme.sh" ]] && [[ ! -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.cer" || ! -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.key" ]]; then
     else
         echoContent green " ---> 安装TLS证书"
-        echoContent v " ---> 安装TLS证书:installDNSACMEStatus: ${installDNSACMEStatus}"
 
         # 首次执行时，installDNSACMEStatus为空
         if [[ "${installDNSACMEStatus}" != "true" ]]; then
@@ -1551,12 +1526,6 @@ installTLS() {
             customSSLEmail
             selectAcmeInstallSSL
         fi
-      
-        # echoContent v "installTLS, begin to install.1"
-        # if [[ -d "$HOME/.acme.sh/${tlsDomain}_ecc" && -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.key" && -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.cer" ]]; then
-        #     echoContent v "installTLS, begin to install. installing..."
-        #     sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${tlsDomain}" --fullchainpath "/etc/v2ray-agent/tls/${tlsDomain}.crt" --keypath "/etc/v2ray-agent/tls/${tlsDomain}.key" --ecc >/dev/null
-        # fi
 
         local installFailed=
         if [[ "${installDNSACMEStatus}" == "true" ]]; then
@@ -1578,13 +1547,6 @@ installTLS() {
 
             installTLSCount=1
             echo
-            #            if [[ -z "${customPort}" ]]; then
-            #                echoContent red " ---> TLS安装失败，正在检查80、443端口是否开放"
-            # allowPort 80
-            # allowPort 443
-            #            fi
-
-            #            echoContent yellow " ---> 重新尝试安装TLS证书"
 
             if tail -n 10 /etc/v2ray-agent/tls/acme.log | grep -q "Could not validate email address as valid"; then
                 echoContent red " ---> 邮箱无法通过SSL厂商验证，请重新输入"
@@ -3441,7 +3403,7 @@ EOF
                 {
                   "certificateFile": "/etc/v2ray-agent/tls/${d}.crt",
                   "keyFile": "/etc/v2ray-agent/tls/${d}.key",
-                  "currentDomain": "${domain}",
+                  "myCurrentDomain": "${domain}",
                   "ocspStapling": 3600,
                   "usage":"encipherment"
                 }
@@ -4295,8 +4257,8 @@ unInstall() {
         echoContent green " ---> 删除伪装网站完成"
     fi
 
-    rm -rf /usr/bin/vasma
-    rm -rf /usr/sbin/vasma
+    rm -f /usr/bin/vasma /usr/sbin/vasma /usr/bin/vahealth
+
     echoContent green " ---> 卸载快捷方式完成"
     echoContent green " ---> 卸载v2ray-agent脚本完成"
 }
@@ -4866,28 +4828,12 @@ EOF
 
 # 脚本快捷方式
 aliasInstall() {
-
-    if [[ -f "$HOME/install.sh" ]] && [[ -d "/etc/v2ray-agent" ]] && grep <"$HOME/install.sh" -q "作者:mack-a"; then
-        mv "$HOME/install.sh" /etc/v2ray-agent/install.sh
-        local vasmaType=
-        if [[ -d "/usr/bin/" ]]; then
-            if [[ ! -f "/usr/bin/vasma" ]]; then
-                ln -s /etc/v2ray-agent/install.sh /usr/bin/vasma
-                chmod 700 /usr/bin/vasma
-                vasmaType=true
-            fi
-
-            rm -rf "$HOME/install.sh"
-        elif [[ -d "/usr/sbin" ]]; then
-            if [[ ! -f "/usr/sbin/vasma" ]]; then
-                ln -s /etc/v2ray-agent/install.sh /usr/sbin/vasma
-                chmod 700 /usr/sbin/vasma
-                vasmaType=true
-            fi
-            rm -rf "$HOME/install.sh"
-        fi
-        if [[ "${vasmaType}" == "true" ]]; then
-            echoContent green "快捷方式创建成功，可执行[vasma]重新打开脚本"
+    if [[ -d "/etc/v2ray-agent" ]]; then
+        mv "$0" /etc/v2ray-agent/install.sh 2>/dev/null
+        chmod +x /etc/v2ray-agent/install.sh
+        if [[ ! -f "/usr/bin/vasma" ]]; then
+            ln -sf /etc/v2ray-agent/install.sh /usr/bin/vasma
+            echoContent green "快捷方式创建成功，可执行[vasma]重新打开脚本。源文件【$0】已删除"
         fi
     fi
 }
@@ -5169,13 +5115,14 @@ unInstallRouting() {
 # 根据tag卸载出站
 unInstallOutbounds() {
     local tag=$1
-
-    if grep -q "${tag}" ${configPath}10_ipv4_outbounds.json; then
-        local ipv6OutIndex
-        ipv6OutIndex=$(jq .outbounds[].tag ${configPath}10_ipv4_outbounds.json | awk '{print ""NR""":"$0}' | grep "${tag}" | awk -F "[:]" '{print $1}' | head -1)
-        if [[ ${ipv6OutIndex} -gt 0 ]]; then
-            routing=$(jq -r 'del(.outbounds['$(("${ipv6OutIndex}" - 1))'])' ${configPath}10_ipv4_outbounds.json)
-            echo "${routing}" | jq . >${configPath}10_ipv4_outbounds.json
+    if [[ -f "${configPath}10_ipv4_outbounds.json" ]]; then
+        if grep -q "${tag}" ${configPath}10_ipv4_outbounds.json; then
+            local ipv6OutIndex
+            ipv6OutIndex=$(jq .outbounds[].tag ${configPath}10_ipv4_outbounds.json | awk '{print ""NR""":"$0}' | grep "${tag}" | awk -F "[:]" '{print $1}' | head -1)
+            if [[ ${ipv6OutIndex} -gt 0 ]]; then
+                routing=$(jq -r 'del(.outbounds['$(("${ipv6OutIndex}" - 1))'])' ${configPath}10_ipv4_outbounds.json)
+                echo "${routing}" | jq . >${configPath}10_ipv4_outbounds.json
+            fi
         fi
     fi
 
@@ -5964,6 +5911,8 @@ customXrayInstall() {
         showAccounts 13
         # 生成订阅
         subscribe 1 y
+        # 提示健康助手使用说明
+        showHealthHelper
         
     else
         echoContent red " ---> 输入不合法"
@@ -6098,6 +6047,8 @@ xrayCoreInstall() {
     showAccounts 14
     # 生成订阅
     subscribe 1 y
+    # 提示健康助手使用说明
+    showHealthHelper
 }
 
 # Hysteria安装
@@ -6158,10 +6109,14 @@ coreVersionManageMenu() {
         v2rayVersionManageMenu 1
     fi
 }
-# 定时任务检查证书
-cronRenewTLS() {
-    if [[ "${renewTLS}" == "RenewTLS" ]]; then
+# 
+executeWithAction() {
+    if [[ "${startAction}" == "RenewTLS" ]]; then
+        # 定时任务检查证书
         renewalTLS
+        exit 0
+    elif [[ "${startAction}" == "autoSubscribe" ]]; then
+        subscribe 1 y 
         exit 0
     fi
 }
@@ -6639,15 +6594,19 @@ subscribe() {
             else
                 read -r -p "请输入salt值, [回车]使用随机:" subscribeSalt
             fi
+
+            if [[ -z "${subscribeSalt}" ]]; then
+                subscribeSalt=$(initRandomSalt)
+            fi
+            echoContent yellow "\n ---> Salt: ${subscribeSalt}"
         else
             #自动安装,则生成10位随机数作为Salt
-            subscribeSalt=$(cat /dev/urandom | tr -dc '0-9' | head -c 10)
+            if [[ -f "/etc/v2ray-agent/subscribe_local/subscribeSalt" && -n $(cat "/etc/v2ray-agent/subscribe_local/subscribeSalt") ]]; then
+                subscribeSalt=$(cat /etc/v2ray-agent/subscribe_local/subscribeSalt)
+            else
+                subscribeSalt=$(cat /dev/urandom | tr -dc '0-9' | head -c 10)
+            fi
         fi
-
-        if [[ -z "${subscribeSalt}" ]]; then
-            subscribeSalt=$(initRandomSalt)
-        fi
-        echoContent yellow "\n ---> Salt: ${subscribeSalt}"
 
         echo "${subscribeSalt}" >/etc/v2ray-agent/subscribe_local/subscribeSalt
 
@@ -6714,6 +6673,14 @@ subscribe() {
     else
         echoContent red " ---> 未安装伪装站点，无法使用订阅服务"
     fi
+}
+
+# 提示健康助手使用说明
+showHealthHelper() {
+    echoContent red "\n=============================================================="
+    echoContent green "本脚本同步安装健康助手脚本，可以通过vahealth命令唤起，脚本路径:/etc/v2ray-agent/healthkeeper.sh"
+    echoContent green "使用前请配置好环境变量，配置文件: ${HOME}/.vps-healthy"
+    echoContent red "==============================================================" 
 }
 
 # 切换alpn
@@ -6965,9 +6932,9 @@ menu() {
 
     cd "$HOME" || exit
     echoContent red "\n=============================================================="
-    echoContent green "作者：mack-a (modified by villey)"
-    echoContent green "当前版本：v2.8.11"
-    echoContent green "Github：https://github.com/mack-a/v2ray-agent"
+    echoContent green "作者: villey (原作者: mack-a, 基于版本v2.8.11)"
+    echoContent green "当前版本：${VERSION} "
+    echoContent green "Github: https://github.com/mack-a/v2ray-agent"
     echoContent green "描述：八合一共存脚本 \c"
     showInstallStatus
     checkWgetShowProgress
@@ -7076,5 +7043,5 @@ menu() {
         ;;
     esac
 }
-cronRenewTLS
+executeWithAction
 menu
