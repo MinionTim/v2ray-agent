@@ -520,6 +520,28 @@ function ensure_server_configs(){
     echo "Find Configs of CloudFlare and LightSail."
 }
 
+function test_configs() {
+    response=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
+        -H "X-Auth-Email: $EMAIL" \
+        -H "X-Auth-Key: $API_KEY" \
+        -H "Content-Type: application/json")
+
+    success=$(echo "$response" | jq -r '.success')
+    if [ "$success" == "true" ]; then
+        echo "CloudFlare API Request Success."
+    else
+        errors=$(echo "$response" | jq -r '.errors')
+        echo "CloudFlare API 请求失败: $errors"
+    fi
+
+    local instance_info=$(aws lightsail get-instance --instance-name $G_INSTANCE_NAME --region $G_REGION)
+    if [ -z "$instance_info" ]; then
+        echo "LightSail Cli Error."
+    else
+        echo "LightSail Cli Request Success."
+    fi
+}
+
 function install(){
     local config="${HOME}/.vps-healthy"
     if [[ ! -f "${config}" ]]; then
@@ -546,7 +568,14 @@ EOF
     fi
 }
 
-function test_run() {
+function uninstall() {
+    # 移除 包含“/etc/v2ray-agent/healthKeeper.sh”的定时任务
+    crontab -l | grep -v "/etc/v2ray-agent/healthKeeper.sh" | crontab -
+    # 卸载时保留 .vps-healthy 配置文件
+    info "vahealth所需的配置文件不会被删除，若需删除请手动执行 [rm -fr ~/.vps-healthy]"
+}
+
+function _test_run() {
     echo "test run..."
     ensure_server_configs
 }
@@ -574,10 +603,15 @@ function main() {
     elif [ "$1" = "change-config" ]; then
         ensure_server_configs
         change_config
-    elif [ "$1" = "test-run" ]; then
-        test_run
+    elif [ "$1" = "test-configs" ]; then
+        ensure_server_configs
+        test_configs
+    elif [ "$1" = "_test-run" ]; then
+        _test_run
     elif [ "$1" = "install" ]; then
         install
+    elif [ "$1" = "uninstall" ]; then
+        uninstall
     else
         ensure_server_configs
         echo "Auto check with: ${domain}:${port}"

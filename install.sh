@@ -4239,8 +4239,8 @@ unInstall() {
         echoContent green " ---> 删除伪装网站完成"
     fi
 
+    vahealth uninstall
     rm -f /usr/bin/vasma /usr/sbin/vasma /usr/bin/vahealth
-    echoContent green "vahealth所需的配置文件不会被删除，若需删除请手动执行 [rm -fr ${HOME}/.vps-healthy]"
 
     echoContent green " ---> 卸载快捷方式完成"
     echoContent green " ---> 卸载v2ray-agent脚本完成"
