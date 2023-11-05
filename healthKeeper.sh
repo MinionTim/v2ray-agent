@@ -520,6 +520,32 @@ function ensure_server_configs(){
     echo "Find Configs of CloudFlare and LightSail."
 }
 
+function install(){
+    local config="${HOME}/.vps-healthy"
+    if [[ ! -f "${config}" ]]; then
+       cat <<EOF >${config}
+{
+    "CloudFlare": {
+        "API_KEY": "",
+        "EMAIL":"",
+        "ZONE_ID":""
+    },
+
+    "LightSail": {
+        "G_INSTANCE_NAME": "",
+        "G_REGION": ""
+    }
+}
+EOF
+    fi
+
+    cron_command="*/15 * * * * /bin/bash /etc/v2ray-agent/healthKeeper.sh >> /etc/v2ray-agent/logs/log_health_keeper.log 2>&1"
+    existing_cron_jobs=$(crontab -l 2>/dev/null)
+    if ! echo "$existing_cron_jobs" | grep -qF "$cron_command"; then
+        (crontab -l 2>/dev/null; echo "$cron_command") | crontab -
+    fi
+}
+
 function test_run() {
     echo "test run..."
     ensure_server_configs
@@ -550,6 +576,8 @@ function main() {
         change_config
     elif [ "$1" = "test-run" ]; then
         test_run
+    elif [ "$1" = "install" ]; then
+        install
     else
         ensure_server_configs
         echo "Auto check with: ${domain}:${port}"

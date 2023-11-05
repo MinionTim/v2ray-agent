@@ -885,24 +885,7 @@ installTools() {
     wget -qO /etc/v2ray-agent/healthKeeper.sh "${wgetShowProgressStatus}" --no-check-certificate "https://raw.githubusercontent.com/MinionTim/v2ray-agent/master/healthKeeper.sh" 
     chmod +x /etc/v2ray-agent/healthKeeper.sh
     ln -sf /etc/v2ray-agent/healthKeeper.sh /usr/bin/vahealth
-    local config="${HOME}/.vps-healthy"
-    if [[ ! -f "${config}" ]]; then
-       cat <<EOF >${config}
-{
-    "CloudFlare": {
-        "API_KEY": "",
-        "EMAIL":"",
-        "ZONE_ID":""
-    },
-
-    "LightSail": {
-        "G_INSTANCE_NAME": "",
-        "G_REGION": ""
-    }
-}
-EOF
-    fi
-
+    vahealth install
 }
 
 # 安装Nginx
@@ -4257,6 +4240,7 @@ unInstall() {
     fi
 
     rm -f /usr/bin/vasma /usr/sbin/vasma /usr/bin/vahealth
+    echoContent green "vahealth所需的配置文件不会被删除，若需删除请手动执行 [rm -fr ${HOME}/.vps-healthy]"
 
     echoContent green " ---> 卸载快捷方式完成"
     echoContent green " ---> 卸载v2ray-agent脚本完成"
