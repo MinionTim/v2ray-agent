@@ -219,7 +219,8 @@ function update_subscribe() {
     fi
 
     local local_auto_file="/etc/v2ray-agent/subscribe_local/default/${user}.autogenerate"
-    cat "/etc/v2ray-agent/subscribe_local/default/${user}" | grep -v "TLS_Vision" > "${local_auto_file}"
+    # cat "/etc/v2ray-agent/subscribe_local/default/${user}" | grep -v "TLS_Vision" > "${local_auto_file}"
+    cat "/etc/v2ray-agent/subscribe_local/default/${user}" > "${local_auto_file}"
 
     # 更新vmess协议的端口号，因为vmess进行了base64编码，所以这里需要先解码再修改，再编码
     while IFS= read -r line; do
@@ -396,7 +397,7 @@ function update_staticip() {
     local old_ip_info=$(aws lightsail get-static-ips --region $REGION --query 'staticIps[?attachedTo==`'$INSTANCE_NAME'`].[name, ipAddress]' --output json)
     check_command_result "无法查询到绑定了实例${INSTANCE_NAME} 的IP"
     local old_ip=$(echo ${old_ip_info} | jq -r '.[][0]')
-    local old_ip_addr=$(echo ${old_ip_info} | jq -r '.[][1]')
+    local old_ip_addr=$(echo ${old_ip_info} | jq -r '.[][1] // ""')
     if [ -z "${old_ip_addr}" ]; then
         echo "无法查询到绑定了实例${INSTANCE_NAME} 的IP"
         send_msg_by_slack "更新LightSail静态IP **失败** ，无法查询到绑定了实例${INSTANCE_NAME} 的IP"
@@ -443,7 +444,7 @@ function remote_update_ip_dns() {
     local domain_proxy_last=$2
     local domain_host=host.$(echo "${domain_proxy_new}" | cut -d'.' -f 2-)
     local domain_test=test2.$(echo "${domain_proxy_new}" | cut -d'.' -f 2-)
-    update_dns $domain_test "54.95.15.1"
+    update_dns $domain_test "10.10.10.1"
     if [ $? -ne 0 ]; then
         echo "CloudFlare 测试域名执行失败，可能是CloudFlare异常"
         send_msg_by_slack "**操作失败**，CloudFlare 测试域名执行失败，可能是CloudFlare异常"
@@ -480,8 +481,8 @@ function remote_update_ip_dns() {
 function send_msg_by_slack() {
     message="$@"
     url="https://slack.com/api/chat.postMessage"
-    channel="C0551JF7Q76"  # Replace with your Slack channel ID
-    token="xoxb-229343062502-3527341865107-aGJnKeG0m0Ftf5dfHvZYLcxH"  # Replace with your Slack Bot token
+    channel="${G_SLACK_CHANNEL}"  # Replace with your Slack channel ID
+    token="${G_SLACK_TOKEN}"  # Replace with your Slack Bot token
 
     payload="{\"channel\":\"${channel}\",\"text\":\"${message}\"}"
     headers=(
@@ -505,19 +506,23 @@ function ensure_server_configs(){
         error "Config file Not Found in path: ${config}"
         exit 1
     fi
-    API_KEY=$(jq -r .CloudFlare.API_KEY ${config})
-    EMAIL=$(jq -r .CloudFlare.EMAIL ${config})
-    ZONE_ID=$(jq -r .CloudFlare.ZONE_ID ${config})
+    API_KEY=$(jq -r '.CloudFlare.api_key // ""' ${config})
+    EMAIL=$(jq -r '.CloudFlare.email // ""' ${config})
+    ZONE_ID=$(jq -r '.CloudFlare.zone_id // ""' ${config})
 
     # configuration for LightSail
-    G_INSTANCE_NAME=$(jq -r .LightSail.G_INSTANCE_NAME ${config})
-    G_REGION=$(jq -r .LightSail.G_REGION ${config})
+    G_INSTANCE_NAME=$(jq -r '.LightSail.instance_name // ""' ${config})
+    G_REGION=$(jq -r '.LightSail.region // ""' ${config})
 
-    if [[ "${API_KEY}" = "null" ]] || [[ "${EMAIL}" = "null" ]] || [[ "${ZONE_ID}" = "null" ]] || [[ "${G_INSTANCE_NAME}" = "null" ]] || [[ "${G_REGION}" = "null" ]]; then
-        echo "Error: CloudFlare or LightSail or Domain configuration not set in ${config}"
+    # slack
+    G_SLACK_TOKEN=$(jq -r '.Slack.token // ""' ${config})
+    G_SLACK_CHANNEL=$(jq -r '.Slack.channel // ""' ${config})
+
+    if [ -z "${API_KEY}" ] || [ -z "${EMAIL}" ] || [ -z "${ZONE_ID}" ] || [ -z "${G_INSTANCE_NAME}" ] || [ -z "${G_REGION}" ] || [ -z "${G_SLACK_TOKEN}" ] || [ -z "${G_SLACK_CHANNEL}" ]; then
+        echo "Error: CloudFlare or LightSail or Slack configuration not set in ${config}"
         exit
     fi
-    echo "Find Configs of CloudFlare and LightSail."
+    echo "Find Configs of CloudFlare、LightSail、Slack."
 }
 
 function test_configs() {
@@ -540,6 +545,8 @@ function test_configs() {
     else
         echo "LightSail Cli Request Success."
     fi
+
+    send_msg_by_slack "Slack test ok."
 }
 
 function install(){
@@ -548,14 +555,19 @@ function install(){
        cat <<EOF >${config}
 {
     "CloudFlare": {
-        "API_KEY": "",
-        "EMAIL":"",
-        "ZONE_ID":""
+        "api_key": "",
+        "email": "",
+        "zone_id": ""
     },
 
     "LightSail": {
-        "G_INSTANCE_NAME": "",
-        "G_REGION": ""
+        "instance_name": "",
+        "region": ""
+    },
+
+    "Slack": {
+        "token": "",
+        "channel": ""
     }
 }
 EOF
@@ -577,7 +589,7 @@ function uninstall() {
 
 function _test_run() {
     echo "test run..."
-    ensure_server_configs
+    # ensure_server_configs
 }
 
 # usage:
@@ -586,24 +598,24 @@ function main() {
     if [[ "$1" == "-h" ]]; then
         echo "usage:"
         echo "bash healthKeeper.sh [ subscribe | _dns | _staticip | ip-dns | test-run ]"
-    elif [ "$1" = "subscribe" ]; then
+    elif [ "$1" = "s" ]; then
         echo "Only execute update subscribe action."
         update_subscribe
     elif [ "$1" = "_dns" ]; then
         ensure_server_configs
-        update_dns "a1.example.com" "10.10.10.40"
+        update_dns "$1" "$2"
     elif [ "$1" = "_staticip" ]; then
         ensure_server_configs
         update_staticip
     elif [ "$1" = "ip-dns" ]; then
         ensure_server_configs
         remote_update_ip_dns
-    elif [ "$1" = "change-uuid" ]; then
+    elif [ "$1" = "cu" ]; then
         change_uuid
-    elif [ "$1" = "change-config" ]; then
+    elif [ "$1" = "cc" ]; then
         ensure_server_configs
         change_config
-    elif [ "$1" = "test-configs" ]; then
+    elif [ "$1" = "t" ]; then
         ensure_server_configs
         test_configs
     elif [ "$1" = "_test-run" ]; then
