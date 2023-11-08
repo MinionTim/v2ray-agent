@@ -882,7 +882,8 @@ installTools() {
     fi
 
     # 安装健康助手脚本
-    wget -qO /etc/v2ray-agent/healthKeeper.sh "${wgetShowProgressStatus}" --no-check-certificate "https://raw.githubusercontent.com/MinionTim/v2ray-agent/master/healthKeeper.sh" 
+    echoContent green " ---> 安装vahealth"
+    wget -qO /etc/v2ray-agent/healthKeeper.sh --no-check-certificate "https://raw.githubusercontent.com/MinionTim/v2ray-agent/master/healthKeeper.sh" 
     chmod +x /etc/v2ray-agent/healthKeeper.sh
     ln -sf /etc/v2ray-agent/healthKeeper.sh /usr/bin/vahealth
     vahealth install
