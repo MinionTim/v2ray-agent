@@ -4231,6 +4231,13 @@ unInstall() {
     #        fi
     #    fi
 
+    echoContent green " ---> 删除伪装网站完成"
+
+    vahealth uninstall
+    echoContent green " ---> 卸载vahealth完成"
+    rm -f /usr/bin/vasma /usr/sbin/vasma /usr/bin/vahealth
+    echoContent green " ---> 卸载快捷方式完成"
+
     rm -rf /etc/v2ray-agent
     rm -rf ${nginxConfigPath}alone.conf
 
@@ -4239,10 +4246,7 @@ unInstall() {
         echoContent green " ---> 删除伪装网站完成"
     fi
 
-    vahealth uninstall
-    rm -f /usr/bin/vasma /usr/sbin/vasma /usr/bin/vahealth
-
-    echoContent green " ---> 卸载快捷方式完成"
+    
     echoContent green " ---> 卸载v2ray-agent脚本完成"
 }
 
@@ -5131,6 +5135,7 @@ installSniffing() {
 
 # warp分流
 warpRouting() {
+    readInstallType
     warpAutoInstall=$2
     echoContent skyBlue "\n进度  $1/${totalProgress} : WARP分流"
     echoContent red "=============================================================="

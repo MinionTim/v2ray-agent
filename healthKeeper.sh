@@ -10,8 +10,11 @@ MAX_CHECK_RETRY_COUNT=2
 CHECK_FAILED=0
 
 readonly V2RAY_AGENT_INSTALL_PATH="/etc/v2ray-agent/install.sh"
-domain=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].myCurrentDomain /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
-port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
+if [[ -f "/etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json" ]]; then
+    domain=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].myCurrentDomain /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
+    port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
+fi
+
 
 # 自定义字体彩色，read 函数
 warning() { echo -e "\033[31m\033[01m$*\033[0m"; }  # 红色
@@ -568,7 +571,7 @@ install(){
 EOF
     fi
 
-    cron_command="*/15 * * * * /bin/bash /etc/v2ray-agent/healthKeeper.sh >> /etc/v2ray-agent/logs/log_health_keeper.log 2>&1"
+    cron_command="*/15 * * * * /bin/bash /etc/v2ray-agent/healthKeeper.sh k >> /etc/v2ray-agent/logs/log_health_keeper.log 2>&1"
     existing_cron_jobs=$(crontab -l 2>/dev/null)
     if ! echo "$existing_cron_jobs" | grep -qF "$cron_command"; then
         (crontab -l 2>/dev/null; echo "$cron_command") | crontab -
@@ -609,7 +612,6 @@ usage() {
 main() {
     check_root
     OPTION=$(tr 'A-Z' 'a-z' <<< "$1")
-    hint "Begin to execute with [$OPTION]"
     case "$OPTION" in
         h | help ) usage; exit 0;;
         K | check ) ensure_server_configs; update_subscribe needcheck; check_ip; exit 0;;
