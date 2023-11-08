@@ -1,18 +1,32 @@
 #!/bin/bash
 
+#http失败时，会重试
+HTTP_RETRY_COUNT=0
+MAX_HTTP_RETRY_COUNT=2
+# 连续多次失败
+CHECK_RETRY_COUNT=0
+MAX_CHECK_RETRY_COUNT=2
+
+CHECK_FAILED=0
+
+readonly V2RAY_AGENT_INSTALL_PATH="/etc/v2ray-agent/install.sh"
+domain=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].myCurrentDomain /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
+port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
+
 # 自定义字体彩色，read 函数
 warning() { echo -e "\033[31m\033[01m$*\033[0m"; }  # 红色
 error() { echo -e "\033[31m\033[01m$*\033[0m"; }  # 红色
 info() { echo -e "\033[32m\033[01m$*\033[0m"; }   # 绿色
 hint() { echo -e "\033[33m\033[01m$*\033[0m"; }   # 黄色
+debug() { echo -e "\033[33m\033[01m$*\033[0m"; }   # 黄色
 reading() { read -rp "$(info "$1")" "$2"; }
 
 
-function check_ip {
+check_ip() {
     echo "======================== [$(date +"%Y-%m-%d %H:%M:%S")] ================================="
     domain=$(jq -r .inbounds[0].settings.clients[0].add /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
     port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)   
-    echo "Auto check with: ${domain}:${port}, count=[$check_retry_count, $http_retry_count]"
+    echo "Auto check with: ${domain}:${port}, count=[$CHECK_RETRY_COUNT, $HTTP_RETRY_COUNT]"
     inside_tcp=""
     outside_tcp=""
     # 国内检测
@@ -79,22 +93,22 @@ function check_ip {
 
     # 国内不通，国外通
     if [ "$ret_inside" == "1" ] && [ "$ret_outside" == "0" ]; then
-        if [ $check_retry_count -eq $max_check_retry_count ]; then
+        if [ $CHECK_RETRY_COUNT -eq $MAX_CHECK_RETRY_COUNT ]; then
             echo "Reach the max retry count, exit the process."
             send_msg_by_slack " *自检服务异常* ，自动更改配置失败重试达到最大次数，请登录服务查看日志."
             exit
         fi
         
-        if [ $http_retry_count -eq $max_http_retry_count ]; then
-            check_failed=1
+        if [ $HTTP_RETRY_COUNT -eq $MAX_HTTP_RETRY_COUNT ]; then
+            CHECK_FAILED=1
             echo "Port blocked by GFW, begin to change config..."
             send_msg_by_slack ":slightly_frowning_face: *国内连接受阻* ，即将更新节点配置，稍后请查看订阅。当前受阻节点: $domain:$port"
             change_config
-            check_retry_count=$[$check_retry_count+1]
-            http_retry_count=0
+            CHECK_RETRY_COUNT=$[$CHECK_RETRY_COUNT+1]
+            HTTP_RETRY_COUNT=0
             check_ip
         else
-            http_retry_count=$[$http_retry_count+1]
+            HTTP_RETRY_COUNT=$[$HTTP_RETRY_COUNT+1]
             sleep 3
             echo "Check IP Bloacked. Retrying..."
             check_ip
@@ -102,9 +116,9 @@ function check_ip {
         
     elif [ "$ret_inside" == "0" ] && [ "$ret_outside" == "0" ]; then
         echo "Server check heathy. Good ^_^ "
-        if [ "${check_failed}" == "1" ]; then
+        if [ "${CHECK_FAILED}" == "1" ]; then
             send_msg_by_slack ":tada:恭喜，节点已检测通过，继续保持～ 节点: $domain:$port"
-            check_failed=0
+            CHECK_FAILED=0
         fi
         local d=$(date +%H:%M)
         if [[ "${d}" > "08:00" && "${d}" < "08:30" ]] || [[ "${d}" > "12:00" && "${d}" < "12:30" ]] || [[ "${d}" > "18:00" && "${d}" < "18:30" ]]; then
@@ -117,7 +131,7 @@ function check_ip {
     fi
 }
 
-function change_config() {
+change_config() {
     local domain_current=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].myCurrentDomain /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
     local domain_wilechid=$(echo "${domain_current}" | cut -d'.' -f 2-)
     local domain_new="au$(date +%y%m%d%H%M%S).${domain_wilechid}"
@@ -144,11 +158,11 @@ function change_config() {
     restart_progress
     send_msg_by_slack "更新成功：port、uuid、domain. ${domain_current}:${port} => ${domain_new}:${port_new}"
 
-    bash ${v2ray_agent_install_path} autoSubscribe
+    bash ${V2RAY_AGENT_INSTALL_PATH} autoSubscribe
     update_subscribe
 }
 
-function restart_progress() {
+restart_progress() {
     systemctl restart xray
     sleep 2
     if [[ -n $(pgrep -f "xray/xray") ]]; then
@@ -166,7 +180,7 @@ function restart_progress() {
     echo "Nginx restart success."
 }
 
-function change_uuid() {
+change_uuid() {
     jq .inbounds[0].settings.clients /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json | jq -c '.[]' | while read -r user; do
         local uuid=$(echo "${user}" | jq -r .id)
         local email_prefix=$(echo "${user}" | jq -r .email | awk -F "[-]" '{print $1}')
@@ -190,26 +204,10 @@ function change_uuid() {
     done
     echo "uuid更新完成"
 
-    # systemctl restart xray
-    # sleep 2
-    # if [[ -n $(pgrep -f "xray/xray") ]]; then
-    #     echo "Xray restart success."
-    # else
-    #     echo "Xray restart fail."
-    #     echo"请手动执行【/etc/v2ray-agent/xray/xray -confdir /etc/v2ray-agent/xray/conf】，查看错误日志"
-    #     mv /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json.autobackup.$st /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json
-    #     echo "Rollback changing operation."
-    #     send_msg_by_slack "重启 Xray 服务失败，请登录服务器查看日志."
-    #     exit 0
-    # fi
-    # bash $v2ray_agent_install_path autoSubscribe
-    # send_msg_by_slack "uuid更新成功"
-
-
 }
 
 # 不传参数needcheck，即表示强制更新
-function update_subscribe() {
+update_subscribe() {
     local port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
     local user=$(jq -r .inbounds[0].settings.clients[0].email /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json | awk -F "[-]" '{print $1}')
     # 指定需要检查文件状态，同时文件已存在，则不执行后续逻辑。
@@ -236,7 +234,6 @@ function update_subscribe() {
     done < "${local_auto_file}" > .temp_file_swap_vmess && mv .temp_file_swap_vmess "${local_auto_file}"
 
     sed -Ei "s/:[0-9]*\?/:${port}\?/g" "${local_auto_file}"
-    echo "${extra_nodes}" | grep -v "^$" >> "${local_auto_file}"
     # 将以"vmess://"或"vless://"开头的行调整到最后
     grep -Ev '^(vmess|vless)://' "${local_auto_file}" >> output.temp && grep -E '^(vmess|vless)://' "${local_auto_file}" >> output.temp && mv output.temp "${local_auto_file}"
     local base64Result
@@ -275,10 +272,8 @@ function update_subscribe() {
 
 # update_dns xx.example.org 10.10.10.80 yy.example.org
 # 域名若存在，则更新A解析; 否则创建并解析，同时删除指定域名
-function update_dns() {
-    local subdomain=$1
-    local new_ip=$2
-    local last_domain=$3
+update_dns() {
+    local subdomain=$1 new_ip=$2 last_domain=$3
     local api_url="https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records"
 
     # 获取子域名当前的 DNS 记录
@@ -337,7 +332,7 @@ function update_dns() {
     return -1
 }
 
-function delete_dns_record() {
+delete_dns_record() {
     local domain=$1
     local api_url="https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records"
     
@@ -378,10 +373,10 @@ function delete_dns_record() {
 
 
 # update_staticip 仅更新LightSail实例的静态ip
-function update_staticip() {
-    local INSTANCE_NAME=${G_INSTANCE_NAME}
-    local REGION=${G_REGION}
-    local NEW_IP_NAME="AutoGen-$(date +%y%m%d-%H%M%S)"
+update_staticip() {
+    local instance_name=${G_INSTANCE_NAME}
+    local region=${G_REGION}
+    local new_ip_name="AutoGen-$(date +%y%m%d-%H%M%S)"
 
     # 函数：检查命令执行结果
     check_command_result() {
@@ -394,51 +389,51 @@ function update_staticip() {
 
     # 获取绑定指定实例的静态 IP 名称
     echo "正在查询当前实例及IP绑定..."
-    local old_ip_info=$(aws lightsail get-static-ips --region $REGION --query 'staticIps[?attachedTo==`'$INSTANCE_NAME'`].[name, ipAddress]' --output json)
-    check_command_result "无法查询到绑定了实例${INSTANCE_NAME} 的IP"
+    local old_ip_info=$(aws lightsail get-static-ips --region $region --query 'staticIps[?attachedTo==`'$instance_name'`].[name, ipAddress]' --output json)
+    check_command_result "无法查询到绑定了实例${instance_name} 的IP"
     local old_ip=$(echo ${old_ip_info} | jq -r '.[][0]')
     local old_ip_addr=$(echo ${old_ip_info} | jq -r '.[][1] // ""')
     if [ -z "${old_ip_addr}" ]; then
-        echo "无法查询到绑定了实例${INSTANCE_NAME} 的IP"
-        send_msg_by_slack "更新LightSail静态IP **失败** ，无法查询到绑定了实例${INSTANCE_NAME} 的IP"
+        echo "无法查询到绑定了实例${instance_name} 的IP"
+        send_msg_by_slack "更新LightSail静态IP **失败** ，无法查询到绑定了实例${instance_name} 的IP"
         return 1
     fi
-    echo "当前实例 < ${INSTANCE_NAME} > 绑定的ip为ip: ${old_ip}, ${old_ip_addr}"
+    echo "当前实例 < ${instance_name} > 绑定的ip为ip: ${old_ip}, ${old_ip_addr}"
 
     # 创建新的静态 IP
     echo "正在创建新IP，并绑定实例..."
     sleep 1
-    local new_ip=$(aws lightsail allocate-static-ip --static-ip-name ${NEW_IP_NAME} --region $REGION --query 'operations[0].resourceName' --output text)
+    local new_ip=$(aws lightsail allocate-static-ip --static-ip-name ${new_ip_name} --region $region --query 'operations[0].resourceName' --output text)
     check_command_result "无法创建新的静态 IP"
     
     # 绑定新的静态 IP,并默认将旧IP解除绑定
     sleep 1
-    aws lightsail attach-static-ip --static-ip-name $new_ip --instance-name $INSTANCE_NAME --region $REGION >> /tmp/aws.log
+    aws lightsail attach-static-ip --static-ip-name $new_ip --instance-name $instance_name --region $region >> /tmp/aws.log
     check_command_result "无法绑定新的静态 IP"
 
 
     # 删除旧的静态 IP
     echo "正在删除旧IP..."
     sleep 1
-    aws lightsail release-static-ip --static-ip-name $old_ip --region $REGION >> /tmp/aws2.log
+    aws lightsail release-static-ip --static-ip-name $old_ip --region $region >> /tmp/aws2.log
     check_command_result "无法删除旧的静态 IP"
     
 
-    g_new_ip_addr=$(aws lightsail get-static-ips --region $REGION --query 'staticIps[?attachedTo==`'$INSTANCE_NAME'`].ipAddress' --output text)
+    g_new_ip_addr=$(aws lightsail get-static-ips --region $region --query 'staticIps[?attachedTo==`'$instance_name'`].ipAddress' --output text)
 
     if [[ $g_new_ip_addr =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-        echo "公网 IP 更新成功！实例: ${INSTANCE_NAME}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
-        send_msg_by_slack "LightSail公网 IP 更新成功！实例: ${INSTANCE_NAME}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
+        echo "公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
+        send_msg_by_slack "LightSail公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
         return 0
     else
-        send_msg_by_slack "LightSail公网 IP 更新失败！实例: ${INSTANCE_NAME}"
+        send_msg_by_slack "LightSail公网 IP 更新失败！实例: ${instance_name}"
     fi
 
     return 1
 }
 
 # 更新实例的staticip，并将域名解析指向新的ip
-function remote_update_ip_dns() {
+remote_update_ip_dns() {
     # 新域名domain_proxy_new， 旧域名：domain_proxy_last
     local domain_proxy_new=$1
     local domain_proxy_last=$2
@@ -478,7 +473,7 @@ function remote_update_ip_dns() {
 }
 
 # send_msg_by_slack "测试消\n123息", "guahao"
-function send_msg_by_slack() {
+send_msg_by_slack() {
     message="$@"
     url="https://slack.com/api/chat.postMessage"
     channel="${G_SLACK_CHANNEL}"  # Replace with your Slack channel ID
@@ -498,7 +493,7 @@ function send_msg_by_slack() {
     fi
 }
 
-function ensure_server_configs(){
+ensure_server_configs(){
     # configuration for CloudFlare.
     local config="${HOME}/.vps-healthy"
 
@@ -525,7 +520,7 @@ function ensure_server_configs(){
     echo "Find Configs of CloudFlare、LightSail、Slack."
 }
 
-function test_configs() {
+test_configs() {
     response=$(curl -s -X GET "https://api.cloudflare.com/client/v4/zones/$ZONE_ID/dns_records" \
         -H "X-Auth-Email: $EMAIL" \
         -H "X-Auth-Key: $API_KEY" \
@@ -549,7 +544,7 @@ function test_configs() {
     send_msg_by_slack "Slack test ok."
 }
 
-function install(){
+install(){
     local config="${HOME}/.vps-healthy"
     if [[ ! -f "${config}" ]]; then
        cat <<EOF >${config}
@@ -580,69 +575,52 @@ EOF
     fi
 }
 
-function uninstall() {
+uninstall() {
     # 移除 包含“/etc/v2ray-agent/healthKeeper.sh”的定时任务
     crontab -l | grep -v "/etc/v2ray-agent/healthKeeper.sh" | crontab -
     # 卸载时保留 .vps-healthy 配置文件
     info "vahealth所需的配置文件不会被删除，若需删除请手动执行 [rm -fr ~/.vps-healthy]"
 }
 
-function _test_run() {
+_test_run() {
     echo "test run..."
     # ensure_server_configs
 }
 
-# usage:
-# bash healthKeeper.sh [subscribe]
-function main() {
-    if [[ "$1" == "-h" ]]; then
-        echo "usage:"
-        echo "bash healthKeeper.sh [ subscribe | _dns | _staticip | ip-dns | test-run ]"
-    elif [ "$1" = "s" ]; then
-        echo "Only execute update subscribe action."
-        update_subscribe
-    elif [ "$1" = "_dns" ]; then
-        ensure_server_configs
-        update_dns "$1" "$2"
-    elif [ "$1" = "_staticip" ]; then
-        ensure_server_configs
-        update_staticip
-    elif [ "$1" = "ip-dns" ]; then
-        ensure_server_configs
-        remote_update_ip_dns
-    elif [ "$1" = "cu" ]; then
-        change_uuid
-    elif [ "$1" = "cc" ]; then
-        ensure_server_configs
-        change_config
-    elif [ "$1" = "t" ]; then
-        ensure_server_configs
-        test_configs
-    elif [ "$1" = "_test-run" ]; then
-        _test_run
-    elif [ "$1" = "install" ]; then
-        install
-    elif [ "$1" = "uninstall" ]; then
-        uninstall
-    else
-        ensure_server_configs
-        echo "Auto check with: ${domain}:${port}"
-        update_subscribe needcheck
-        check_ip
-    fi
+check_root() {
+  [ "$(id -u)" != 0 ] && error "\n必须以root方式运行脚本，可以输入 sudo su 切换用户\n" && exit 1;
 }
 
-#http失败时，会重试
-http_retry_count=0
-max_http_retry_count=2
 
-# 连续多次失败
-check_retry_count=0
-max_check_retry_count=2
-check_failed=0
-extra_nodes=""
-v2ray_agent_install_path="/etc/v2ray-agent/install.sh"
-domain=$(jq -r .inbounds[0].streamSettings.tlsSettings.certificates[0].myCurrentDomain /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
-port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
+usage() {
+    echo "usage:"
+    echo "  bash healthKeeper.sh [option] [arg...]"
+    echo "options:"
+    echo "  h | help: print help info."
+    echo "  k | check: check ip, it will change server configs if needed."
+    echo "  s | subscribe: update subscribe."
+    echo "  u | uuid: update uuid."
+    echo "  c | changeconfig: update configs, e.g. uuid, ip, domain, port."
+    echo "  t | testconfigs: test server configs, e.g. lightsail, cloudflare."
+    echo "  i | install: install the script."
+    echo "  u | uninstall: uninstall the script."
+}
+
+main() {
+    check_root
+    OPTION=$(tr 'A-Z' 'a-z' <<< "$1")
+    hint "Begin to execute with [$OPTION]"
+    case "$OPTION" in
+        h | help ) usage; exit 0;;
+        K | check ) ensure_server_configs; update_subscribe needcheck; check_ip; exit 0;;
+        s | subscribe ) update_subscribe; exit 0;;
+        u | uuid ) change_uuid; exit 0;;
+        c | changeconfig ) ensure_server_configs; change_config;  exit 0;;
+        t | testconfigs ) ensure_server_configs; test_configs; exit 0;;
+        i | install ) install; exit 0;;
+        u | uninstall ) uninstall; exit 0;;
+        * ) echo "unknown options ( \"$OPTION\" ), please refer to the belowing..."; usage; exit 0;;
+    esac
+}
 
 main "$@"
