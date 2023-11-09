@@ -289,10 +289,9 @@ update_dns() {
     # 解析 JSON 数据并提取当前的 IP 地址和记录 ID
     local current_ip=$(echo "$response" | jq -r '.result[0].content // ""')
     local record_id=$(echo "$response" | jq -r '.result[0].id // ""') #找不到该字段，则返回空，而不是null
-    echo ${record_id}
 
     if [ -z "$record_id" ]; then
-        echo "创建子域名"
+        echo "创建子域名, domain=${subdomain}"
         # 子域名不存在，创建 A 记录
         sleep 1
         local response=$(curl -s -X POST "${api_url}"  \
@@ -316,7 +315,7 @@ update_dns() {
         fi
     else
         # 更新子域名的 IP 地址
-        echo "更新子域名"
+        echo "更新子域名, domain=${subdomain}"
         sleep 1
         local response=$(curl -s -X PUT "${api_url}/${record_id}"  \
             -H "X-Auth-Email: ${EMAIL}" \
@@ -516,7 +515,7 @@ ensure_server_configs(){
     G_SLACK_TOKEN=$(jq -r '.Slack.token // ""' ${config})
     G_SLACK_CHANNEL=$(jq -r '.Slack.channel // ""' ${config})
 
-    if [ -z "${API_KEY}" ] || [ -z "${EMAIL}" ] || [ -z "${ZONE_ID}" ] || [ -z "${G_INSTANCE_NAME}" ] || [ -z "${G_REGION}" ] || [ -z "${G_SLACK_TOKEN}" ] || [ -z "${G_SLACK_CHANNEL}" ]; then
+    if [[ -z "${API_KEY}" || -z "${EMAIL}" || -z "${ZONE_ID}" || -z "${G_INSTANCE_NAME}" || -z "${G_REGION}" || -z "${G_SLACK_TOKEN}" || -z "${G_SLACK_CHANNEL}" ]]; then
         echo "Error: CloudFlare or LightSail or Slack configuration not set in ${config}"
         exit
     fi
@@ -596,6 +595,8 @@ check_root() {
 
 
 usage() {
+    echo "A assistive tool for v2ray-agent(vasma). It can update xray configrations automaticlly."
+    echo ""
     echo "usage:"
     echo "  bash healthKeeper.sh [option] [arg...]"
     echo "options:"
@@ -621,7 +622,7 @@ main() {
         t | testconfigs ) ensure_server_configs; test_configs; exit 0;;
         i | install ) install; exit 0;;
         u | uninstall ) uninstall; exit 0;;
-        * ) echo "unknown options ( \"$OPTION\" ), please refer to the belowing..."; usage; exit 0;;
+        * ) echo "unknown options \"$OPTION\", please refer to the belowing..."; usage; exit 0;;
     esac
 }
 
