@@ -570,7 +570,7 @@ install(){
 EOF
     fi
 
-    cron_command="*/15 * * * * /bin/bash /etc/v2ray-agent/healthKeeper.sh k >> /etc/v2ray-agent/logs/log_health_keeper.log 2>&1"
+    cron_command="*/15 * * * * /bin/bash /etc/v2ray-agent/healthKeeper.sh check >> /etc/v2ray-agent/logs/log_health_keeper.log 2>&1"
     existing_cron_jobs=$(crontab -l 2>/dev/null)
     if ! echo "$existing_cron_jobs" | grep -qF "$cron_command"; then
         (crontab -l 2>/dev/null; echo "$cron_command") | crontab -
@@ -605,7 +605,7 @@ usage() {
     echo "  s | subscribe: update subscribe."
     echo "  u | uuid: update uuid."
     echo "  c | changeconfig: update configs, e.g. uuid, ip, domain, port."
-    echo "  t | testconfigs: test server configs, e.g. lightsail, cloudflare."
+    echo "  t | test: test server configs, e.g. lightsail, cloudflare."
     echo "  i | install: install the script."
     echo "  u | uninstall: uninstall the script."
 }
@@ -619,7 +619,7 @@ main() {
         s | subscribe ) update_subscribe; exit 0;;
         u | uuid ) change_uuid; exit 0;;
         c | changeconfig ) ensure_server_configs; change_config;  exit 0;;
-        t | testconfigs ) ensure_server_configs; test_configs; exit 0;;
+        t | test ) ensure_server_configs; test_configs; exit 0;;
         i | install ) install; exit 0;;
         u | uninstall ) uninstall; exit 0;;
         * ) echo "unknown options \"$OPTION\", please refer to the belowing..."; usage; exit 0;;

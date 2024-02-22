@@ -199,6 +199,7 @@ initVar() {
     # 启动参数startAction，配置该值后，可单独使用脚本，可选值：
     # RenewTLS: 更新证书 
     # autoSubscribe: 自动更新订阅 renewTLS
+    # reInstallTlsByDnsApi: 重新安装tls证书
     startAction=$1
 
     # tls安装失败后尝试的次数
@@ -401,7 +402,7 @@ readInstallAlpn() {
         alpn=$(jq -r .inbounds[0].streamSettings.tlsSettings.alpn[0] ${configPath}${frontingType}.json)
         if [[ -n ${alpn} ]]; then
             currentAlpn=${alpn}
-        fi
+    fi
     fi
 }
 
@@ -1369,7 +1370,8 @@ selectAcmeInstallSSL() {
 # 安装SSL证书
 acmeInstallSSL() {
     # echoContent v "acmeInstallSSL, dnsSSLStatus:[${dnsSSLStatus}],ssltype: [${sslType}], installSSLIPv6: [${installSSLIPv6}], tlsDomain: ${tlsDomain}, dnsTLSDomain: ${dnsTLSDomain}"
-    if [[ "${dnsSSLStatus}" == "true" ]]; then
+    if [[ "${dnsSSLStatus}" == "true-manual" ]]; then
+        # dns 手动模式
         sudo "$HOME/.acme.sh/acme.sh" --issue -d "*.${dnsTLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
 
         local txtValue=
@@ -1401,6 +1403,9 @@ acmeInstallSSL() {
                 exit 0
             fi
         fi
+    elif [[ "${dnsSSLStatus}" == "true" ]]; then
+        # dns api模式
+        doInstallTlsByDnsApi "*.${dnsTLSDomain}" "${sslType}"
     else
         echoContent green " ---> 生成证书中 (installed by standalone)"
         sudo "$HOME/.acme.sh/acme.sh" --issue -d "${tlsDomain}" --standalone -k ec-256 --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
@@ -1715,12 +1720,15 @@ renewalTLS() {
     if [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]] || [[ "${installDNSACMEStatus}" == "true" ]]; then
         modifyTime=
 
+        local fixedDomain=
         if [[ "${installDNSACMEStatus}" == "true" ]]; then
             modifyTime=$(stat "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
-            echoContent skyBlue " ---> 证书: $HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.cer"
+            echoContent skyBlue " ---> 通配证书: $HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.cer, ${sslType}"
+            fixedDomain=*.${dnsTLSDomain}
         else
             modifyTime=$(stat "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
-            echoContent skyBlue " ---> 证书: $HOME/.acme.sh/${domain}_ecc/${domain}.cer"
+            echoContent skyBlue " ---> 普通证书: $HOME/.acme.sh/${domain}_ecc/${domain}.cer, ${sslType}"
+            fixedDomain=${domain}
         fi
 
         modifyTime=$(date +%s -d "${modifyTime}")
@@ -1738,13 +1746,17 @@ renewalTLS() {
         echoContent skyBlue " ---> 证书生成日期:$(date -d @"${modifyTime}" +"%F %H:%M:%S")"
         echoContent skyBlue " ---> 证书生成天数:${days}"
         echoContent skyBlue " ---> 证书剩余天数:"${tlsStatus}
-        echoContent skyBlue " ---> 证书过期前最后一天自动更新，如更新失败请手动更新"
+        echoContent skyBlue " ---> 证书过期前最后几天自动更新，如更新失败请手动更新"
 
-        if [[ ${remainingDays} -le 1 ]]; then
+        if [[ ${remainingDays} -le 5 ]]; then
             echoContent yellow " ---> 重新生成证书"
             handleNginx stop
-            sudo "$HOME/.acme.sh/acme.sh" --cron --home "$HOME/.acme.sh"
-            sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${domain}" --fullchainpath /etc/v2ray-agent/tls/"${domain}.crt" --keypath /etc/v2ray-agent/tls/"${domain}.key" --ecc
+
+            # sudo "$HOME/.acme.sh/acme.sh" --cron -d "${fixedDomain}" --log --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}"
+            # sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${fixedDomain}" --fullchainpath /etc/v2ray-agent/tls/"${fixedDomain}.crt" --keypath /etc/v2ray-agent/tls/"${fixedDomain}.key" --ecc
+
+            sudo "$HOME/.acme.sh/acme.sh" --cron --home "$HOME/.acme.sh"  2>&1 | tee -a /etc/v2ray-agent/tls/acme.log
+            sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${fixedDomain}" --fullchainpath /etc/v2ray-agent/tls/"${fixedDomain}.crt" --keypath /etc/v2ray-agent/tls/"${fixedDomain}.key" --ecc 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log
             reloadCore
             handleNginx start
         else
@@ -1754,6 +1766,85 @@ renewalTLS() {
         echoContent red " ---> 未安装"
     fi
 }
+
+# 重新安装证书，采用dns api方式，支持泛域名自动续期
+reInstallTlsByDnsApi() {
+    if [[ -n $1 ]]; then
+        echoContent skyBlue "\n进度  $1/1 : 重新安装证书"
+    fi
+    readAcmeTLS
+    local domain=${currentHost}
+    if [[ -z "${currentHost}" && -n "${tlsDomain}" ]]; then
+        domain=${tlsDomain}
+    fi
+
+    if [[ -f "/etc/v2ray-agent/tls/ssl_type" ]]; then
+        local sslType=$(cat /etc/v2ray-agent/tls/ssl_type)
+        if grep -q "buypass" <"/etc/v2ray-agent/tls/ssl_type"; then
+            sslRenewalDays=180
+        fi
+    fi
+    if [[ -d "$HOME/.acme.sh/${domain}_ecc" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]] || [[ "${installDNSACMEStatus}" == "true" ]]; then
+        local modifyTime=
+        local fixedDomain=
+        if [[ "${installDNSACMEStatus}" == "true" ]]; then
+            modifyTime=$(stat "$HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
+            echoContent skyBlue " ---> 通配证书: $HOME/.acme.sh/*.${dnsTLSDomain}_ecc/*.${dnsTLSDomain}.cer, ${sslType}"
+            fixedDomain=*.${dnsTLSDomain}
+        else
+            modifyTime=$(stat "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" | sed -n '7,6p' | awk '{print $2" "$3" "$4" "$5}')
+            echoContent skyBlue " ---> 普通证书: $HOME/.acme.sh/${domain}_ecc/${domain}.cer, ${sslType}"
+            fixedDomain=${domain}
+        fi
+
+        modifyTime=$(date +%s -d "${modifyTime}")
+        currentTime=$(date +%s)
+        ((stampDiff = currentTime - modifyTime))
+        ((days = stampDiff / 86400))
+        ((remainingDays = sslRenewalDays - days))
+
+        tlsStatus=${remainingDays}
+        if [[ ${remainingDays} -le 0 ]]; then
+            tlsStatus="已过期"
+        fi
+
+        echoContent skyBlue " ---> 证书检查日期:$(date "+%F %H:%M:%S")"
+        echoContent skyBlue " ---> 证书生成日期:$(date -d @"${modifyTime}" +"%F %H:%M:%S")"
+        echoContent skyBlue " ---> 证书生成天数:${days}"
+        echoContent skyBlue " ---> 证书剩余天数:"${tlsStatus}
+        echoContent yellow " ---> 即将重新生成证书"
+        handleNginx stop
+
+        doInstallTlsByDnsApi "${fixedDomain}" ${sslType}
+
+        reloadCore
+        handleNginx start
+        
+    else
+        echoContent red " ---> 未安装"
+    fi
+}
+
+doInstallTlsByDnsApi() {
+    local fixedDomain=$1
+    local sslType=$2
+    echo $fixedDomain $sslType
+    echoContent green " ---> DnsApi模式，需要配置dns服务商的授权token，不同dns服务商获取方式会稍有不同，当前仅支持CloudFlare。"
+    echoContent yellow " ---> 添加方法请参考此教程，https://www.panyanbin.com/article/c44653d8.html"
+    echoContent green " --->  即将开始配置CloudFlare DNS"
+    echo
+    read -r -p "请输入CF_Key，获取方法可参考https://dash.cloudflare.com/profile/api-tokens: " CF_Key
+    read -r -p "请输入CF_Email，即CloudFlare的登录邮箱: " CF_Email
+    if [[ -z "${CF_Key}" || -z "${CF_Email}" ]]; then
+        echoContent red "配置输入错误，程序退出"
+    fi
+    export CF_Key="${CF_Key}"
+    export CF_Email="${CF_Email}"
+
+    sudo "$HOME/.acme.sh/acme.sh" --issue -d "${fixedDomain}" --dns dns_cf555555 -k ec-256 --server "${sslType}" 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log
+    sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${fixedDomain}" --fullchainpath /etc/v2ray-agent/tls/"${fixedDomain}.crt" --keypath /etc/v2ray-agent/tls/"${fixedDomain}.key" --ecc 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log 
+}
+
 # 查看TLS证书的状态
 checkTLStatus() {
 
@@ -6103,6 +6194,9 @@ executeWithAction() {
     if [[ "${startAction}" == "RenewTLS" ]]; then
         # 定时任务检查证书
         renewalTLS
+        exit 0
+    elif [[ "${startAction}" == "reInstallTlsByDnsApi" ]]; then
+        reInstallTlsByDnsApi
         exit 0
     elif [[ "${startAction}" == "autoSubscribe" ]]; then
         subscribe 1 y 
