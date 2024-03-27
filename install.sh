@@ -1372,7 +1372,7 @@ acmeInstallSSL() {
     # echoContent v "acmeInstallSSL, dnsSSLStatus:[${dnsSSLStatus}],ssltype: [${sslType}], installSSLIPv6: [${installSSLIPv6}], tlsDomain: ${tlsDomain}, dnsTLSDomain: ${dnsTLSDomain}"
     if [[ "${dnsSSLStatus}" == "true-manual" ]]; then
         # dns 手动模式
-        sudo "$HOME/.acme.sh/acme.sh" --issue -d "*.${dnsTLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
+        "$HOME/.acme.sh/acme.sh" --issue -d "*.${dnsTLSDomain}" --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please -k ec-256 --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
 
         local txtValue=
         txtValue=$(tail -n 10 /etc/v2ray-agent/tls/acme.log | grep "TXT value" | awk -F "'" '{print $2}')
@@ -1391,8 +1391,8 @@ acmeInstallSSL() {
                 if echo "${txtAnswer}" | grep -q "^${txtValue}"; then
                     echoContent green " ---> TXT记录验证通过"
                     echoContent green " ---> 生成证书中. DNS, Step 1/2."
-                    sudo "$HOME/.acme.sh/acme.sh" --renew -d "*.${dnsTLSDomain}" -d "${dnsTLSDomain}" --log --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
-                    sudo "$HOME/.acme.sh/acme.sh" --installcert -d "*.${dnsTLSDomain}" --fullchainpath "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.crt" --keypath "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.key" --ecc >/dev/null
+                    "$HOME/.acme.sh/acme.sh" --renew -d "*.${dnsTLSDomain}" -d "${dnsTLSDomain}" --log --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
+                    "$HOME/.acme.sh/acme.sh" --installcert -d "*.${dnsTLSDomain}" --fullchainpath "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.crt" --keypath "/etc/v2ray-agent/tls/*.${dnsTLSDomain}.key" --ecc >/dev/null
               
                 else
                     echoContent red " ---> 验证失败，请等待1-2分钟后重新尝试"
@@ -1408,9 +1408,9 @@ acmeInstallSSL() {
         doInstallTlsByDnsApi "*.${dnsTLSDomain}" "${sslType}"
     else
         echoContent green " ---> 生成证书中 (installed by standalone)"
-        sudo "$HOME/.acme.sh/acme.sh" --issue -d "${tlsDomain}" --standalone -k ec-256 --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
+        "$HOME/.acme.sh/acme.sh" --issue -d "${tlsDomain}" --standalone -k ec-256 --server "${sslType}" ${installSSLIPv6} 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log >/dev/null
         if [[ -d "$HOME/.acme.sh/${tlsDomain}_ecc" && -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.key" && -f "$HOME/.acme.sh/${tlsDomain}_ecc/${tlsDomain}.cer" ]]; then
-            sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${tlsDomain}" --fullchainpath "/etc/v2ray-agent/tls/${tlsDomain}.crt" --keypath "/etc/v2ray-agent/tls/${tlsDomain}.key" --ecc >/dev/null
+            "$HOME/.acme.sh/acme.sh" --installcert -d "${tlsDomain}" --fullchainpath "/etc/v2ray-agent/tls/${tlsDomain}.crt" --keypath "/etc/v2ray-agent/tls/${tlsDomain}.key" --ecc >/dev/null
         fi
     fi
 }
@@ -1495,7 +1495,7 @@ installTLS() {
         renewalTLS
 
         if [[ -z $(find /etc/v2ray-agent/tls/ -name "${existsDomain}.crt") ]] || [[ -z $(find /etc/v2ray-agent/tls/ -name "${existsDomain}.key") ]] || [[ -z $(cat "/etc/v2ray-agent/tls/${existsDomain}.crt") ]]; then
-            sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${existsDomain}" --fullchainpath "/etc/v2ray-agent/tls/${existsDomain}.crt" --keypath "/etc/v2ray-agent/tls/${existsDomain}.key" --ecc >/dev/null
+            "$HOME/.acme.sh/acme.sh" --installcert -d "${existsDomain}" --fullchainpath "/etc/v2ray-agent/tls/${existsDomain}.crt" --keypath "/etc/v2ray-agent/tls/${existsDomain}.key" --ecc >/dev/null
         else
             echoContent yellow " ---> 如未过期或者自定义证书请选择[n]\n"
             read -r -p "是否重新安装？[y/n]:" reInstallStatus
@@ -1752,11 +1752,11 @@ renewalTLS() {
             echoContent yellow " ---> 重新生成证书"
             handleNginx stop
 
-            # sudo "$HOME/.acme.sh/acme.sh" --cron -d "${fixedDomain}" --log --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}"
-            # sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${fixedDomain}" --fullchainpath /etc/v2ray-agent/tls/"${fixedDomain}.crt" --keypath /etc/v2ray-agent/tls/"${fixedDomain}.key" --ecc
+            # "$HOME/.acme.sh/acme.sh" --cron -d "${fixedDomain}" --log --yes-I-know-dns-manual-mode-enough-go-ahead-please --ecc --server "${sslType}"
+            # "$HOME/.acme.sh/acme.sh" --installcert -d "${fixedDomain}" --fullchainpath /etc/v2ray-agent/tls/"${fixedDomain}.crt" --keypath /etc/v2ray-agent/tls/"${fixedDomain}.key" --ecc
 
-            sudo "$HOME/.acme.sh/acme.sh" --cron --home "$HOME/.acme.sh"  2>&1 | tee -a /etc/v2ray-agent/tls/acme.log
-            sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${fixedDomain}" --fullchainpath /etc/v2ray-agent/tls/"${fixedDomain}.crt" --keypath /etc/v2ray-agent/tls/"${fixedDomain}.key" --ecc 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log
+            "$HOME/.acme.sh/acme.sh" --cron --home "$HOME/.acme.sh"  2>&1 | tee -a /etc/v2ray-agent/tls/acme.log
+            "$HOME/.acme.sh/acme.sh" --installcert -d "${fixedDomain}" --fullchainpath /etc/v2ray-agent/tls/"${fixedDomain}.crt" --keypath /etc/v2ray-agent/tls/"${fixedDomain}.key" --ecc 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log
             reloadCore
             handleNginx start
         else
@@ -1833,16 +1833,27 @@ doInstallTlsByDnsApi() {
     echoContent yellow " ---> 添加方法请参考此教程，https://www.panyanbin.com/article/c44653d8.html"
     echoContent green " --->  即将开始配置CloudFlare DNS"
     echo
-    read -r -p "请输入CF_Key，获取方法可参考https://dash.cloudflare.com/profile/api-tokens: " CF_Key
-    read -r -p "请输入CF_Email，即CloudFlare的登录邮箱: " CF_Email
-    if [[ -z "${CF_Key}" || -z "${CF_Email}" ]]; then
-        echoContent red "配置输入错误，程序退出"
+    local need_reset_config="y"
+    if grep -q "SAVED_CF_Key" $HOME/.acme.sh/account.conf && grep -q "SAVED_CF_Email" $HOME/.acme.sh/account.conf; then
+        read -r -p "检测到已存在CloudFlare配置，是否重新配置? [y/n]" need_reset_config
     fi
-    export CF_Key="${CF_Key}"
-    export CF_Email="${CF_Email}"
 
-    sudo "$HOME/.acme.sh/acme.sh" --issue -d "${fixedDomain}" --dns dns_cf555555 -k ec-256 --server "${sslType}" 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log
-    sudo "$HOME/.acme.sh/acme.sh" --installcert -d "${fixedDomain}" --fullchainpath /etc/v2ray-agent/tls/"${fixedDomain}.crt" --keypath /etc/v2ray-agent/tls/"${fixedDomain}.key" --ecc 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log 
+    if [[ "${need_reset_config}" == "y" ]]; then
+        read -r -p "请输入CF_Key，获取方法可参考https://dash.cloudflare.com/profile/api-tokens: " cf_key
+        read -r -p "请输入CF_Email，即CloudFlare的登录邮箱: " cf_email
+        if [[ -z "${cf_key}" || -z "${cf_email}" ]]; then
+            echoContent red "配置输入错误，程序退出"
+            exit 1
+        fi
+        export CF_Key="${cf_key}"
+        export CF_Email="${cf_email}"
+        echoContent green "使用新的CloudFlare配置."
+    else
+        echoContent green "使用已存在的CloudFlare配置，继续处理"
+    fi
+
+    "$HOME/.acme.sh/acme.sh" --issue -d "${fixedDomain}" --dns dns_cf -k ec-256 --server "${sslType}" 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log
+    "$HOME/.acme.sh/acme.sh" --installcert -d "${fixedDomain}" --fullchainpath /etc/v2ray-agent/tls/"${fixedDomain}.crt" --keypath /etc/v2ray-agent/tls/"${fixedDomain}.key" --ecc 2>&1 | tee -a /etc/v2ray-agent/tls/acme.log 
 }
 
 # 查看TLS证书的状态
