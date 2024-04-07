@@ -4782,7 +4782,7 @@ updateV2RayAgent() {
     #    if wget --help | grep -q show-progress; then
     wget -c -q "${wgetShowProgressStatus}" -P /etc/v2ray-agent/ -N --no-check-certificate "https://raw.githubusercontent.com/MinionTim/v2ray-agent/master/install.sh"
 
-    wget -qO /etc/v2ray-agent/healthKeeper.sh --no-check-certificate "https://raw.githubusercontent.com/MinionTim/v2ray-agent/master/healthKeeper.sh" 
+    wget -qO /etc/v2ray-agent/healthKeeper.sh -q "${wgetShowProgressStatus}" --no-check-certificate "https://raw.githubusercontent.com/MinionTim/v2ray-agent/master/healthKeeper.sh" 
     chmod +x /etc/v2ray-agent/healthKeeper.sh
 
     sudo chmod 700 /etc/v2ray-agent/install.sh
