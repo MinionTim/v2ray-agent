@@ -441,7 +441,9 @@ remote_update_ip_dns() {
     local domain_proxy_last=$2
     local domain_host=host.$(echo "${domain_proxy_new}" | cut -d'.' -f 2-)
     local domain_test=test2.$(echo "${domain_proxy_new}" | cut -d'.' -f 2-)
-    update_dns $domain_test "10.10.10.1"
+    local random_ip=$(printf "%d.%d.%d.%d" $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%256)) $((RANDOM%255+1)))
+
+    update_dns $domain_test $random_ip
     if [ $? -ne 0 ]; then
         echo "CloudFlare 测试域名执行失败，可能是CloudFlare异常"
         send_msg_by_slack "**操作失败**，CloudFlare 测试域名执行失败，可能是CloudFlare异常"
