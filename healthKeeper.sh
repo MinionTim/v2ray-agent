@@ -28,27 +28,27 @@ reading() { read -rp "$(info "$1")" "$2"; }
 check_ip() {
     echo "======================== [$(date +"%Y-%m-%d %H:%M:%S")] ================================="
     domain=$(jq -r .inbounds[0].settings.clients[0].add /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
-    port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)   
+    port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
     echo "Auto check with: ${domain}:${port}, count=[$CHECK_RETRY_COUNT, $HTTP_RETRY_COUNT]"
     inside_tcp=""
     outside_tcp=""
     # 国内检测
-    url="https://www.toolsdaquan.com/toolapi/public/ipchecking/$domain/$port"
     echo "Checking server [inside], url = ${url}"
-    headers=(
-        -H "sec-ch-ua: \"Chromium\";v=\"112\", \"Google Chrome\";v=\"112\", \"Not:A-Brand\";v=\"99\""
-        -H "Accept: application/json, text/javascript, */*; q=0.01"
-        -H "Referer: https://www.toolsdaquan.com/ipcheck/"
-        -H "X-Requested-With: XMLHttpRequest"
-        -H "sec-ch-ua-mobile: ?0"
-        -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
-        -H "sec-ch-ua-platform: \"macOS\""
-        --compressed
-    )
 
     local ret_inside
-    response=$(curl -sSL "${url}" "${headers[@]}")
-    tcp_status=$(echo "$response" | jq -r '.tcp')
+    echo "Auto test with: ${domain}:${port}"
+    status_code=$(curl -s -o /dev/null -w "%{http_code}" "https://villey.cn/check_port?domain=$domain&port=$port")
+
+    # 判断状态码是否 >= 500
+    if [[ "$status_code" -ge 500 ]]; then
+        tcp_status="fail"
+    else
+        tcp_status="success"
+    fi
+
+    # 输出结果
+    echo "HTTP Status Code: $status_code"
+    echo "TCP Status: $tcp_status"
     if [ "$tcp_status" == "success" ]; then
         ret_inside=0
         inside_tcp="国内: TCP可用"
@@ -76,24 +76,6 @@ check_ip() {
         outside_tcp="国外: TCP不可用"
     fi
 
-    # 国外检测 -1 , www.toolsdaquan.com 异常，切换成 nc检查
-#    local ret_outside
-#    url="https://www.toolsdaquan.com/toolapi/public/ipchecking2/$domain/$port"
-#    echo "Checking server [outside], url = ${url}"
-#    response=$(curl -sSL "${url}" "${headers[@]}")
-#    tcp_status=$(echo "$response" | jq -r '.outside_tcp')
-#    if [ "$tcp_status" == "success" ]; then
-#        ret_outside=0
-#        outside_tcp="国外: TCP可用"
-#    elif [ "$tcp_status" == "fail" ]; then
-#        ret_outside=1
-#        outside_tcp="国外: TCP不可用"
-#    else
-#        ret_outside=2
-#        outside_tcp="程序异常"
-#        echo ${response}
-#    fi
-
     # 国内不通，国外通
     if [ "$ret_inside" == "1" ] && [ "$ret_outside" == "0" ]; then
         if [ $CHECK_RETRY_COUNT -eq $MAX_CHECK_RETRY_COUNT ]; then
@@ -101,7 +83,7 @@ check_ip() {
             send_msg_by_slack " *自检服务异常* ，自动更改配置失败重试达到最大次数，请登录服务查看日志."
             exit
         fi
-        
+
         if [ $HTTP_RETRY_COUNT -eq $MAX_HTTP_RETRY_COUNT ]; then
             CHECK_FAILED=1
             echo "Port blocked by GFW, begin to change config..."
@@ -116,7 +98,7 @@ check_ip() {
             echo "Check IP Bloacked. Retrying..."
             check_ip
         fi
-        
+
     elif [ "$ret_inside" == "0" ] && [ "$ret_outside" == "0" ]; then
         echo "Server check heathy. Good ^_^ "
         if [ "${CHECK_FAILED}" == "1" ]; then
@@ -127,7 +109,7 @@ check_ip() {
         if [[ "${d}" > "08:00" && "${d}" < "08:30" ]] || [[ "${d}" > "12:00" && "${d}" < "12:30" ]] || [[ "${d}" > "18:00" && "${d}" < "18:30" ]]; then
             send_msg_by_slack ":tada:当前节点检测通过，继续保持～ 节点: $domain:$port"
         fi
-        
+
     else
         echo "Server down / firewall blocked, please check"
         send_msg_by_slack ":slightly_frowning_face:节点检测异常，原因可能是服务异常。稍后会自动重试，请登录服务器检查。当前受阻节点: $domain:$port"
@@ -139,7 +121,7 @@ change_config() {
     local domain_wilechid=$(echo "${domain_current}" | cut -d'.' -f 2-)
     local domain_new="au$(date +%y%m%d%H%M%S).${domain_wilechid}"
     # local domain_new=${domain_current}
-    local port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)   
+    local port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
     local port_new=$[$port+1]
 
     # 更新lightsail 和 CloudFlare，如果更新失败，则仅更新port、uuid。
@@ -152,7 +134,7 @@ change_config() {
 
     sed -i "s/${domain_current}/${domain_new}/g" /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json
     sed -i "s/port\": ${port},/port\": ${port_new},/g" /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json
-    
+
     sed -i "s/${domain_current}/${domain_new}/g" /etc/nginx/conf.d/alone.conf
     sed -i "s/${domain_new}:${port}/${domain_new}:${port_new}/g" /etc/nginx/conf.d/alone.conf
 
@@ -176,7 +158,7 @@ restart_progress() {
         send_msg_by_slack "重启 Xray 服务失败，请登录服务器查看日志."
         exit 0
     fi
-    
+
     # update nginx port
     systemctl reload nginx
     sleep 1
@@ -263,7 +245,7 @@ update_subscribe() {
         echo "目录为空或未找到配置文件"
     else
         cp -f "$directory/$latest_file" "$directory/autogenerate" && echo "已成功复制文件 ${directory}/${latest_file}, 并重命名为autogenerate"
-    
+
         # 使用 awk 命令替换同时包含 "clashMeta" 和 "url" 的行为 "abdc"
         replacement="url: https://worker.fh6766.com/subscribe-clashmeta/serving-the-net"
         # awk -v repl="${replacement}" '/clashMeta/ && /url/ { $0 = repl } 1' "$directory/autogenerate" > temp.yaml && mv temp.yaml "$directory/autogenerate"
@@ -275,6 +257,7 @@ update_subscribe() {
 
 # update_dns xx.example.org 10.10.10.80 yy.example.org
 # 域名若存在，则更新A解析; 否则创建并解析，同时删除指定域名
+# 每个域名对应一个zoneid，更换域名则必须更换zone_id
 update_dns() {
     local subdomain=$1 new_ip=$2 last_domain=$3
     local api_url="https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records"
@@ -337,7 +320,7 @@ update_dns() {
 delete_dns_record() {
     local domain=$1
     local api_url="https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records"
-    
+
     sleep 1
     local response=$(curl -s -X GET "${api_url}?type=A&name=${domain}" \
         -H "X-Auth-Email: ${EMAIL}" \
@@ -407,19 +390,19 @@ update_staticip() {
     sleep 1
     local new_ip=$(aws lightsail allocate-static-ip --static-ip-name ${new_ip_name} --region $region --query 'operations[0].resourceName' --output text)
     check_command_result "无法创建新的静态 IP"
-    
+
     # 绑定新的静态 IP,并默认将旧IP解除绑定
     sleep 1
-    aws lightsail attach-static-ip --static-ip-name $new_ip --instance-name $instance_name --region $region >> /tmp/aws.log
+    aws lightsail attach-static-ip --static-ip-name $new_ip --instance-name $instance_name --region $region
     check_command_result "无法绑定新的静态 IP"
 
 
     # 删除旧的静态 IP
     echo "正在删除旧IP..."
     sleep 1
-    aws lightsail release-static-ip --static-ip-name $old_ip --region $region >> /tmp/aws2.log
-    check_command_result "无法删除旧的静态 IP"
-    
+    aws lightsail release-static-ip --static-ip-name $old_ip --region $region
+    #check_command_result "无法删除旧的静态 IP"
+
 
     g_new_ip_addr=$(aws lightsail get-static-ips --region $region --query 'staticIps[?attachedTo==`'$instance_name'`].ipAddress' --output text)
 
@@ -588,6 +571,22 @@ uninstall() {
 
 _test_run() {
     echo "test run..."
+	    domain=$(jq -r .inbounds[0].settings.clients[0].add /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
+    port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
+	port=8503
+    echo "Auto test with: ${domain}:${port}"
+    status_code=$(curl -s -o /dev/null -w "%{http_code}" "https://villey.cn/check_port?domain=$domain&port=$port")
+
+    # 判断状态码是否 >= 500
+    if [[ "$status_code" -ge 500 ]]; then
+        tcp_status="fail"
+    else
+        tcp_status="success"
+    fi
+
+    # 输出结果
+    echo "HTTP Status Code: $status_code"
+    echo "TCP Status: $tcp_status"
     # ensure_server_configs
 }
 
@@ -623,6 +622,7 @@ main() {
         c | changeconfig ) ensure_server_configs; change_config;  exit 0;;
         t | test ) ensure_server_configs; test_configs; exit 0;;
         i | install ) install; exit 0;;
+		x | temptest ) ensure_server_configs; _test_run; exit 0;;
         u | uninstall ) uninstall; exit 0;;
         * ) echo "unknown options \"$OPTION\", please refer to the belowing..."; usage; exit 0;;
     esac
