@@ -246,12 +246,12 @@ update_subscribe() {
     else
         cp -f "$directory/$latest_file" "$directory/autogenerate" && echo "已成功复制文件 ${directory}/${latest_file}, 并重命名为autogenerate"
 
-        # 使用 awk 命令替换同时包含 "clashMeta" 和 "url" 的行为 "abdc"
-        replacement="url: https://worker.fh6766.com/subscribe-clashmeta/serving-the-net"
-        # awk -v repl="${replacement}" '/clashMeta/ && /url/ { $0 = repl } 1' "$directory/autogenerate" > temp.yaml && mv temp.yaml "$directory/autogenerate"
-
         # 使用 awk 命令替换同时包含 "clashMeta" 和 "url" 的行，并保留行前的空格
+        replacement="url: https://worker.fh6766.com/subscribe-clashmeta/serving-the-net?sk=GeqUzvU5E085fxeU7q2y1uY"
         awk -v repl="$replacement" '/clashMeta/ && /url/ { match($0, /^[[:space:]]*/); spaces = substr($0, RSTART, RLENGTH); $0 = spaces repl } 1' "$directory/autogenerate" > temp.yaml && mv temp.yaml "$directory/autogenerate"
+        
+        proxy_server=$(curl -s https://worker.fh6766.com/proxyserver)
+        sed -i "s|https://ghproxy.com|${proxy_server}|g" "$directory/autogenerate"
     fi
 }
 
@@ -571,7 +571,7 @@ uninstall() {
 
 _test_run() {
     echo "test run..."
-	    domain=$(jq -r .inbounds[0].settings.clients[0].add /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
+	domain=$(jq -r .inbounds[0].settings.clients[0].add /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
     port=$(jq -r .inbounds[0].port /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json)
 	port=8503
     echo "Auto test with: ${domain}:${port}"
