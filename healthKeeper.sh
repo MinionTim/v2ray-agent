@@ -80,14 +80,14 @@ check_ip() {
     if [ "$ret_inside" == "1" ] && [ "$ret_outside" == "0" ]; then
         if [ $CHECK_RETRY_COUNT -eq $MAX_CHECK_RETRY_COUNT ]; then
             echo "Reach the max retry count, exit the process."
-            send_msg_by_slack " *自检服务异常* ，自动更改配置失败重试达到最大次数，请登录服务查看日志."
+            send_msg_by_bot " *自检服务异常* ，自动更改配置失败重试达到最大次数，请登录服务查看日志."
             exit
         fi
 
         if [ $HTTP_RETRY_COUNT -eq $MAX_HTTP_RETRY_COUNT ]; then
             CHECK_FAILED=1
             echo "Port blocked by GFW, begin to change config..."
-            send_msg_by_slack ":slightly_frowning_face: *国内连接受阻* ，即将更新节点配置，稍后请查看订阅。当前受阻节点: $domain:$port"
+            send_msg_by_bot ":slightly_frowning_face: *国内连接受阻* ，即将更新节点配置，稍后请查看订阅。当前受阻节点: $domain:$port"
             change_config
             CHECK_RETRY_COUNT=$[$CHECK_RETRY_COUNT+1]
             HTTP_RETRY_COUNT=0
@@ -102,17 +102,17 @@ check_ip() {
     elif [ "$ret_inside" == "0" ] && [ "$ret_outside" == "0" ]; then
         echo "Server check heathy. Good ^_^ "
         if [ "${CHECK_FAILED}" == "1" ]; then
-            send_msg_by_slack ":tada:恭喜，节点已检测通过，继续保持～ 节点: $domain:$port"
+            send_msg_by_bot ":tada:恭喜，节点已检测通过，继续保持～ 节点: $domain:$port"
             CHECK_FAILED=0
         fi
         local d=$(date +%H:%M)
         if [[ "${d}" > "08:00" && "${d}" < "08:30" ]] || [[ "${d}" > "12:00" && "${d}" < "12:30" ]] || [[ "${d}" > "18:00" && "${d}" < "18:30" ]]; then
-            send_msg_by_slack ":tada:当前节点检测通过，继续保持～ 节点: $domain:$port"
+            send_msg_by_bot ":tada:当前节点检测通过，继续保持～ 节点: $domain:$port"
         fi
 
     else
         echo "Server down / firewall blocked, please check"
-        send_msg_by_slack ":slightly_frowning_face:节点检测异常，原因可能是服务异常。稍后会自动重试，请登录服务器检查。当前受阻节点: $domain:$port"
+        send_msg_by_bot ":slightly_frowning_face:节点检测异常，原因可能是服务异常。稍后会自动重试，请登录服务器检查。当前受阻节点: $domain:$port"
     fi
 }
 
@@ -129,7 +129,7 @@ change_config() {
     if [ $? -ne 0 ]; then
         domain_new=${domain_current}
         echo "Lightsail或CloudFlare异常，仅更新port\uuid。"
-        send_msg_by_slack "Lightsail或CloudFlare异常，仅更新port\uuid。"
+        send_msg_by_bot "Lightsail或CloudFlare异常，仅更新port\uuid。"
     fi
 
     sed -i "s/${domain_current}/${domain_new}/g" /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json
@@ -141,7 +141,7 @@ change_config() {
     change_uuid
 
     restart_progress
-    send_msg_by_slack "更新成功：port、uuid、domain. ${domain_current}:${port} => ${domain_new}:${port_new}"
+    send_msg_by_bot "更新成功：port、uuid、domain. ${domain_current}:${port} => ${domain_new}:${port_new}"
 
     bash ${V2RAY_AGENT_INSTALL_PATH} autoSubscribe
     update_subscribe
@@ -155,7 +155,7 @@ restart_progress() {
     else
         echo "Xray restart fail."
         echo"请手动执行【/etc/v2ray-agent/xray/xray -confdir /etc/v2ray-agent/xray/conf】，查看错误日志"
-        send_msg_by_slack "重启 Xray 服务失败，请登录服务器查看日志."
+        send_msg_by_bot "重启 Xray 服务失败，请登录服务器查看日志."
         exit 0
     fi
 
@@ -285,13 +285,13 @@ update_dns() {
         local status=$(echo "$response" | jq -r '.success // ""')
         if [ "$status" = "true" ]; then
             echo "New subdomain (${subdomain}) created with A record: ${new_ip}"
-            send_msg_by_slack "CloudFlare域名解析更新成功。创建新域名，${subdomain} A记录解析到 ${new_ip}"
+            send_msg_by_bot "CloudFlare域名解析更新成功。创建新域名，${subdomain} A记录解析到 ${new_ip}"
 
             # 删除旧域名
             if [ -n "${last_domain}" ]; then
                 delete_dns_record ${last_domain}
                  if [ $? -ne 0 ]; then
-                    send_msg_by_slack "**操作失败**，CloudFlare域名,删除域名失败。"
+                    send_msg_by_bot "**操作失败**，CloudFlare域名,删除域名失败。"
                 fi
             fi
             return 0
@@ -308,7 +308,7 @@ update_dns() {
         local status=$(echo "$response" | jq -r '.success // ""')
         if [ "$status" = "true" ]; then
             echo "Domain: ${subdomain}, A record has been updated from ${current_ip} to ${new_ip}"
-            send_msg_by_slack "CloudFlare域名解析更新成功。A记录 ${subdomain} 从 ${current_ip} 更新到 ${new_ip}"
+            send_msg_by_bot "CloudFlare域名解析更新成功。A记录 ${subdomain} 从 ${current_ip} 更新到 ${new_ip}"
             return 0
         fi
     fi
@@ -351,7 +351,7 @@ delete_dns_record() {
         return 0
     else
         echo "Failed to delete DNS record for ${domain}"
-        send_msg_by_slack "Failed to delete DNS record for ${domain}"
+        send_msg_by_bot "Failed to delete DNS record for ${domain}"
     fi
     return -1
 }
@@ -367,7 +367,7 @@ update_staticip() {
     check_command_result() {
         if [ $? -ne 0 ]; then
             echo "命令执行失败：$1"
-            send_msg_by_slack "更新LightSail静态IP **失败** ，命令执行失败：$1"
+            send_msg_by_bot "更新LightSail静态IP **失败** ，命令执行失败：$1"
             exit 1
         fi
     }
@@ -380,7 +380,7 @@ update_staticip() {
     local old_ip_addr=$(echo ${old_ip_info} | jq -r '.[][1] // ""')
     if [ -z "${old_ip_addr}" ]; then
         echo "无法查询到绑定了实例${instance_name} 的IP"
-        send_msg_by_slack "更新LightSail静态IP **失败** ，无法查询到绑定了实例${instance_name} 的IP"
+        send_msg_by_bot "更新LightSail静态IP **失败** ，无法查询到绑定了实例${instance_name} 的IP"
         return 1
     fi
     echo "当前实例 < ${instance_name} > 绑定的ip为ip: ${old_ip}, ${old_ip_addr}"
@@ -408,10 +408,10 @@ update_staticip() {
 
     if [[ $g_new_ip_addr =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
         echo "公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
-        send_msg_by_slack "LightSail公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
+        send_msg_by_bot "LightSail公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
         return 0
     else
-        send_msg_by_slack "LightSail公网 IP 更新失败！实例: ${instance_name}"
+        send_msg_by_bot "LightSail公网 IP 更新失败！实例: ${instance_name}"
     fi
 
     return 1
@@ -429,21 +429,21 @@ remote_update_ip_dns() {
     update_dns $domain_test $random_ip
     if [ $? -ne 0 ]; then
         echo "CloudFlare 测试域名执行失败，可能是CloudFlare异常"
-        send_msg_by_slack "**操作失败**，CloudFlare 测试域名执行失败，可能是CloudFlare异常"
+        send_msg_by_bot "**操作失败**，CloudFlare 测试域名执行失败，可能是CloudFlare异常"
         return 1
     fi
 
     update_staticip
     if [ $? -ne 0 ]; then
         echo "remote_update_ip_dns命令执行失败： update_staticip"
-        send_msg_by_slack "**操作失败**，LightSail更新公网IP失败。"
+        send_msg_by_bot "**操作失败**，LightSail更新公网IP失败。"
         return 1
     fi
     # 更新host域名
     update_dns $domain_host $g_new_ip_addr
     if [ $? -ne 0 ]; then
         echo "remote_update_ip_dns命令执行失败： update_dns"
-        send_msg_by_slack "**操作失败**，CloudFlare域名解析修改失败。"
+        send_msg_by_bot "**操作失败**，CloudFlare域名解析修改失败。"
         return 1
     fi
 
@@ -451,33 +451,35 @@ remote_update_ip_dns() {
     update_dns $domain_proxy_new $g_new_ip_addr $domain_proxy_last
     if [ $? -ne 0 ]; then
         echo "remote_update_ip_dns命令执行失败： update_dns"
-        send_msg_by_slack "**操作失败**，CloudFlare域名解析修改失败。"
+        send_msg_by_bot "**操作失败**，CloudFlare域名解析修改失败。"
         return 1
     fi
 
-    send_msg_by_slack "更换IP成功"
+    send_msg_by_bot "更换IP成功"
     return 0
 }
 
-# send_msg_by_slack "测试消\n123息", "guahao"
-send_msg_by_slack() {
-    message="$@"
-    url="https://slack.com/api/chat.postMessage"
-    channel="${G_SLACK_CHANNEL}"  # Replace with your Slack channel ID
-    token="${G_SLACK_TOKEN}"  # Replace with your Slack Bot token
+send_msg_by_bot() {
+    local message="$@"
+    local webhook_url="https://www.feishu.cn/flow/api/trigger-webhook/${G_FEISHU_TOKEN}"
+    local topic="VPS Info"
 
-    payload="{\"channel\":\"${channel}\",\"text\":\"${message}\"}"
-    headers=(
-        -H "Authorization: Bearer ${token}"
-        -H "Content-Type: application/json; charset=utf-8"
-    )
-    response=$(curl -sSL -X POST "${url}" -d "${payload}" "${headers[@]}")
-    if echo "${response}" | jq -e '.ok' > /dev/null; then
-        echo "[Slack] Message sent successfully!"
+    # 检查消息内容是否为空
+    if [[ -z "$message" ]]; then
+        echo "错误: 消息内容不能为空"
+        return 1
+    fi
+    local json_payload=$(jq -n --arg topic "$topic" --arg content "$message" --arg msg_type "text" '{"topic":$topic, "content":$content, "msg_type":$msg_type}')
+    local response=$(curl -s -X POST -H 'Content-type: application/json' --data "$json_payload" "$webhook_url")
+
+    # 如果返回的 code 为 0 则表示成功
+    if echo "${response}" | jq -e '.code == 0' > /dev/null; then
+        echo "Feishu Message sent successfully!"
     else
-        echo "[Slack] Failed to send message:"
+        echo "Feishu Failed to send message:"
         echo "${response}" | jq
     fi
+    return 0
 }
 
 ensure_server_configs(){
@@ -496,15 +498,14 @@ ensure_server_configs(){
     G_INSTANCE_NAME=$(jq -r '.LightSail.instance_name // ""' ${config})
     G_REGION=$(jq -r '.LightSail.region // ""' ${config})
 
-    # slack
-    G_SLACK_TOKEN=$(jq -r '.Slack.token // ""' ${config})
-    G_SLACK_CHANNEL=$(jq -r '.Slack.channel // ""' ${config})
+    # Feishu
+    G_FEISHU_TOKEN=$(jq -r '.Feishu.token // ""' ${config})
 
-    if [[ -z "${API_KEY}" || -z "${EMAIL}" || -z "${ZONE_ID}" || -z "${G_INSTANCE_NAME}" || -z "${G_REGION}" || -z "${G_SLACK_TOKEN}" || -z "${G_SLACK_CHANNEL}" ]]; then
-        echo "Error: CloudFlare or LightSail or Slack configuration not set in ${config}"
+    if [[ -z "${API_KEY}" || -z "${EMAIL}" || -z "${ZONE_ID}" || -z "${G_INSTANCE_NAME}" || -z "${G_REGION}" || -z "${G_FEISHU_TOKEN}" ]]; then
+        echo "Error: CloudFlare or LightSail or Feishu configuration not set in ${config}"
         exit
     fi
-    echo "Find Configs of CloudFlare、LightSail、Slack."
+    echo "Find Configs of CloudFlare、LightSail、Feishu."
 }
 
 test_configs() {
@@ -528,7 +529,7 @@ test_configs() {
         echo "LightSail Cli Request Success."
     fi
 
-    send_msg_by_slack "Slack test ok."
+    send_msg_by_bot "Feishu test ok."
 }
 
 install(){
@@ -547,9 +548,8 @@ install(){
         "region": ""
     },
 
-    "Slack": {
-        "token": "",
-        "channel": ""
+    "Feishu": {
+        "token": ""
     }
 }
 EOF
