@@ -87,7 +87,7 @@ check_ip() {
         if [ $HTTP_RETRY_COUNT -eq $MAX_HTTP_RETRY_COUNT ]; then
             CHECK_FAILED=1
             echo "Port blocked by GFW, begin to change config..."
-            send_msg_by_bot ":slightly_frowning_face: *国内连接受阻* ，即将更新节点配置，稍后请查看订阅。当前受阻节点: $domain:$port"
+            send_msg_by_bot "⚡️ *国内连接受阻* ，即将更新节点配置，稍后请查看订阅。当前受阻节点: $domain:$port"
             change_config
             CHECK_RETRY_COUNT=$[$CHECK_RETRY_COUNT+1]
             HTTP_RETRY_COUNT=0
@@ -102,17 +102,17 @@ check_ip() {
     elif [ "$ret_inside" == "0" ] && [ "$ret_outside" == "0" ]; then
         echo "Server check heathy. Good ^_^ "
         if [ "${CHECK_FAILED}" == "1" ]; then
-            send_msg_by_bot ":tada:恭喜，节点已检测通过，继续保持～ 节点: $domain:$port"
+            send_msg_by_bot "❤️恭喜，节点已检测通过，继续保持～ 节点: $domain:$port"
             CHECK_FAILED=0
         fi
         local d=$(date +%H:%M)
         if [[ "${d}" > "08:00" && "${d}" < "08:30" ]] || [[ "${d}" > "12:00" && "${d}" < "12:30" ]] || [[ "${d}" > "18:00" && "${d}" < "18:30" ]]; then
-            send_msg_by_bot ":tada:当前节点检测通过，继续保持～ 节点: $domain:$port"
+            send_msg_by_bot "❤️当前节点检测通过，继续保持～ 节点: $domain:$port"
         fi
 
     else
         echo "Server down / firewall blocked, please check"
-        send_msg_by_bot ":slightly_frowning_face:节点检测异常，原因可能是服务异常。稍后会自动重试，请登录服务器检查。当前受阻节点: $domain:$port"
+        send_msg_by_bot "⚡️节点检测异常，原因可能是服务异常。稍后会自动重试，请登录服务器检查。当前受阻节点: $domain:$port"
     fi
 }
 
