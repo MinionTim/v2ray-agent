@@ -529,7 +529,7 @@ test_configs() {
         echo "LightSail Cli Request Success."
     fi
 
-    send_msg_by_bot "Feishu test ok."
+    send_msg_by_bot "Feishu test ok. ❤️"
 }
 
 install(){
