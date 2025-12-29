@@ -521,7 +521,11 @@ test_configs() {
         errors=$(echo "$response" | jq -r '.errors')
         echo "CloudFlare API 请求失败: $errors"
     fi
-
+    check_aws_cli
+    if [ $? -ne 0 ]; then
+        echo "AWS CLI 检查失败。"
+        exit 1
+    fi
     local instance_info=$(aws lightsail get-instance --instance-name $G_INSTANCE_NAME --region $G_REGION)
     if [ -z "$instance_info" ]; then
         echo "LightSail Cli Error."
@@ -560,6 +564,11 @@ EOF
     if ! echo "$existing_cron_jobs" | grep -qF "$cron_command"; then
         (crontab -l 2>/dev/null; echo "$cron_command") | crontab -
     fi
+
+    check_aws_cli
+    if [ $? -ne 0 ]; then
+        echo "报错不影响脚本安装，请稍后升级 AWS CLI 到 2.x 版本。"
+    fi
 }
 
 uninstall() {
@@ -567,6 +576,19 @@ uninstall() {
     crontab -l | grep -v "/etc/v2ray-agent/healthKeeper.sh" | crontab -
     # 卸载时保留 .vps-healthy 配置文件
     info "vahealth所需的配置文件不会被删除，若需删除请手动执行 [rm -fr ~/.vps-healthy]"
+}
+
+check_aws_cli(){
+    if ! command -v aws1 &> /dev/null; then
+        error "AWS CLI 未安装，请先安装 AWS CLI。"
+        return 1
+    fi
+    aws_version=$(aws --version | grep -oP '\d+\.\d+\.\d+')
+    if [[ $aws_version != 2.* ]]; then
+        error "AWS CLI 版本不是 2.x，请升级到 2.x 版本。"
+        return 1
+    fi
+    return 0
 }
 
 _test_run() {

@@ -1965,7 +1965,7 @@ installXray() {
     if [[ "${coreInstallType}" != "1" ]]; then
 
         version=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r '.[]|select (.prerelease=='${prereleaseStatus}')|.tag_name' | head -1)
-
+        version=v1.8.3
         echoContent green " ---> Xray-core版本:${version}"
 
         #        if wget --help | grep -q show-progress; then
