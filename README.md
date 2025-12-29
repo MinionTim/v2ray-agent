@@ -2,7 +2,8 @@
 
 ## 1.当前项目特点
 
-- 支持主机健康自检，并自动切换IP、Port、域名、UUID等（当前仅支持LightSail主机 + CloudFlare域名） 
+- 支持主机健康自检，并自动切换IP、Port、域名、UUID等（当前仅支持LightSail主机 + CloudFlare域名）
+- 如采用API方式来创建域名并自动更新证书，若安装时配置域名为 host.example.com，那么后期api自动创建的域名格式为 subdomain.example.com。
 
 ## 2.原项目介绍
 
