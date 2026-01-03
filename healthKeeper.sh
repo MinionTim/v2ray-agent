@@ -579,7 +579,7 @@ uninstall() {
 }
 
 check_aws_cli(){
-    if ! command -v aws1 &> /dev/null; then
+    if ! command -v aws &> /dev/null; then
         error "AWS CLI 未安装，请先安装 AWS CLI。"
         return 1
     fi
