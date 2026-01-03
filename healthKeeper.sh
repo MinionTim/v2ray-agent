@@ -80,7 +80,7 @@ check_ip() {
     if [ "$ret_inside" == "1" ] && [ "$ret_outside" == "0" ]; then
         if [ $CHECK_RETRY_COUNT -eq $MAX_CHECK_RETRY_COUNT ]; then
             echo "Reach the max retry count, exit the process."
-            send_msg_by_bot " *自检服务异常* ，自动更改配置失败重试达到最大次数，请登录服务查看日志."
+            send_msg_by_bot "⚡️ *自检服务异常* ，自动更改配置失败重试达到最大次数，请登录服务查看日志."
             exit
         fi
 
@@ -129,7 +129,7 @@ change_config() {
     if [ $? -ne 0 ]; then
         domain_new=${domain_current}
         echo "Lightsail或CloudFlare异常，仅更新port\uuid。"
-        send_msg_by_bot "Lightsail或CloudFlare异常，仅更新port\uuid。"
+        send_msg_by_bot "⚡️ Lightsail或CloudFlare异常，仅更新port\uuid。"
     fi
 
     sed -i "s/${domain_current}/${domain_new}/g" /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json
@@ -141,7 +141,7 @@ change_config() {
     change_uuid
 
     restart_progress
-    send_msg_by_bot "更新成功：port、uuid、domain. ${domain_current}:${port} => ${domain_new}:${port_new}"
+    send_msg_by_bot "❤️更新成功：port、uuid、domain. ${domain_current}:${port} => ${domain_new}:${port_new}"
 
     bash ${V2RAY_AGENT_INSTALL_PATH} autoSubscribe
     update_subscribe
@@ -155,7 +155,7 @@ restart_progress() {
     else
         echo "Xray restart fail."
         echo"请手动执行【/etc/v2ray-agent/xray/xray -confdir /etc/v2ray-agent/xray/conf】，查看错误日志"
-        send_msg_by_bot "重启 Xray 服务失败，请登录服务器查看日志."
+        send_msg_by_bot "⚡️重启 Xray 服务失败，请登录服务器查看日志."
         exit 0
     fi
 
@@ -285,13 +285,13 @@ update_dns() {
         local status=$(echo "$response" | jq -r '.success // ""')
         if [ "$status" = "true" ]; then
             echo "New subdomain (${subdomain}) created with A record: ${new_ip}"
-            send_msg_by_bot "CloudFlare域名解析更新成功。创建新域名，${subdomain} A记录解析到 ${new_ip}"
+            send_msg_by_bot "❤️CloudFlare域名解析更新成功。创建新域名，${subdomain} A记录解析到 ${new_ip}"
 
             # 删除旧域名
             if [ -n "${last_domain}" ]; then
                 delete_dns_record ${last_domain}
                  if [ $? -ne 0 ]; then
-                    send_msg_by_bot "**操作失败**，CloudFlare域名,删除域名失败。"
+                    send_msg_by_bot "⚡️ **操作失败**，CloudFlare域名,删除域名失败。"
                 fi
             fi
             return 0
@@ -308,7 +308,7 @@ update_dns() {
         local status=$(echo "$response" | jq -r '.success // ""')
         if [ "$status" = "true" ]; then
             echo "Domain: ${subdomain}, A record has been updated from ${current_ip} to ${new_ip}"
-            send_msg_by_bot "CloudFlare域名解析更新成功。A记录 ${subdomain} 从 ${current_ip} 更新到 ${new_ip}"
+            send_msg_by_bot "❤️CloudFlare域名解析更新成功。A记录 ${subdomain} 从 ${current_ip} 更新到 ${new_ip}"
             return 0
         fi
     fi
@@ -351,7 +351,7 @@ delete_dns_record() {
         return 0
     else
         echo "Failed to delete DNS record for ${domain}"
-        send_msg_by_bot "Failed to delete DNS record for ${domain}"
+        send_msg_by_bot "⚡️ Failed to delete DNS record for ${domain}"
     fi
     return -1
 }
@@ -367,7 +367,7 @@ update_staticip() {
     check_command_result() {
         if [ $? -ne 0 ]; then
             echo "命令执行失败：$1"
-            send_msg_by_bot "更新LightSail静态IP **失败** ，命令执行失败：$1"
+            send_msg_by_bot "⚡️更新LightSail静态IP **失败** ，命令执行失败：$1"
             exit 1
         fi
     }
@@ -408,10 +408,10 @@ update_staticip() {
 
     if [[ $g_new_ip_addr =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
         echo "公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
-        send_msg_by_bot "LightSail公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
+        send_msg_by_bot "❤️LightSail公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
         return 0
     else
-        send_msg_by_bot "LightSail公网 IP 更新失败！实例: ${instance_name}"
+        send_msg_by_bot "⚡️LightSail公网 IP 更新失败！实例: ${instance_name}"
     fi
 
     return 1
@@ -429,21 +429,21 @@ remote_update_ip_dns() {
     update_dns $domain_test $random_ip
     if [ $? -ne 0 ]; then
         echo "CloudFlare 测试域名执行失败，可能是CloudFlare异常"
-        send_msg_by_bot "**操作失败**，CloudFlare 测试域名执行失败，可能是CloudFlare异常"
+        send_msg_by_bot "⚡️**操作失败**，CloudFlare 测试域名执行失败，可能是CloudFlare异常"
         return 1
     fi
 
     update_staticip
     if [ $? -ne 0 ]; then
         echo "remote_update_ip_dns命令执行失败： update_staticip"
-        send_msg_by_bot "**操作失败**，LightSail更新公网IP失败。"
+        send_msg_by_bot "⚡️**操作失败**，LightSail更新公网IP失败。"
         return 1
     fi
     # 更新host域名
     update_dns $domain_host $g_new_ip_addr
     if [ $? -ne 0 ]; then
         echo "remote_update_ip_dns命令执行失败： update_dns"
-        send_msg_by_bot "**操作失败**，CloudFlare域名解析修改失败。"
+        send_msg_by_bot "⚡️**操作失败**，CloudFlare域名解析修改失败。"
         return 1
     fi
 
@@ -451,11 +451,11 @@ remote_update_ip_dns() {
     update_dns $domain_proxy_new $g_new_ip_addr $domain_proxy_last
     if [ $? -ne 0 ]; then
         echo "remote_update_ip_dns命令执行失败： update_dns"
-        send_msg_by_bot "**操作失败**，CloudFlare域名解析修改失败。"
+        send_msg_by_bot "⚡️**操作失败**，CloudFlare域名解析修改失败。"
         return 1
     fi
 
-    send_msg_by_bot "更换IP成功"
+    send_msg_by_bot "❤️更换IP成功"
     return 0
 }
 
@@ -533,7 +533,7 @@ test_configs() {
         echo "LightSail Cli Request Success."
     fi
 
-    send_msg_by_bot "Feishu test ok. ❤️"
+    send_msg_by_bot "⚡️Feishu test ok. ❤️"
 }
 
 install(){
@@ -613,7 +613,7 @@ _test_run() {
 }
 
 check_root() {
-  [ "$(id -u)" != 0 ] && error "\n必须以root方式运行脚本，可以输入 sudo su 切换用户\n" && exit 1;
+    [ "$(id -u)" != 0 ] && error "\n必须以root方式运行脚本，可以输入 sudo su 切换用户\n" && exit 1;
 }
 
 
