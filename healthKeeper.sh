@@ -23,6 +23,8 @@ info() { echo -e "\033[32m\033[01m$*\033[0m"; }   # 绿色
 hint() { echo -e "\033[33m\033[01m$*\033[0m"; }   # 黄色
 debug() { echo -e "\033[33m\033[01m$*\033[0m"; }   # 黄色
 reading() { read -rp "$(info "$1")" "$2"; }
+LOG_FILE=/etc/v2ray-agent/logs/log_health_keeper_opt.log
+log() { echo "$@" | tee -a "$LOG_FILE"; }
 
 
 check_ip() {
@@ -128,7 +130,7 @@ change_config() {
     remote_update_ip_dns ${domain_new} ${domain_current}
     if [ $? -ne 0 ]; then
         domain_new=${domain_current}
-        echo "Lightsail或CloudFlare异常，仅更新port\uuid。"
+        log "Lightsail或CloudFlare异常，仅更新port\uuid。"
         send_msg_by_bot "⚡️ Lightsail或CloudFlare异常，仅更新port\uuid。"
     fi
 
@@ -274,7 +276,7 @@ update_dns() {
     local record_id=$(echo "$response" | jq -r '.result[0].id // ""') #找不到该字段，则返回空，而不是null
 
     if [ -z "$record_id" ]; then
-        echo "创建子域名, domain=${subdomain}"
+        log "创建子域名, domain=${subdomain}"
         # 子域名不存在，创建 A 记录
         sleep 1
         local response=$(curl -s -X POST "${api_url}"  \
@@ -290,7 +292,7 @@ update_dns() {
             # 删除旧域名
             if [ -n "${last_domain}" ]; then
                 delete_dns_record ${last_domain}
-                 if [ $? -ne 0 ]; then
+                if [ $? -ne 0 ]; then
                     send_msg_by_bot "⚡️ **操作失败**，CloudFlare域名,删除域名失败。"
                 fi
             fi
@@ -298,16 +300,17 @@ update_dns() {
         fi
     else
         # 更新子域名的 IP 地址
-        echo "更新子域名, domain=${subdomain}"
+        log "更新子域名, domain=${subdomain}，当前IP=${current_ip}，更新为IP=${new_ip}"
         sleep 1
         local response=$(curl -s -X PUT "${api_url}/${record_id}"  \
             -H "X-Auth-Email: ${EMAIL}" \
             -H "X-Auth-Key: ${API_KEY}" \
             -H "Content-Type: application/json" \
             --data "{\"type\":\"A\",\"name\":\"${subdomain}\",\"content\":\"${new_ip}\",\"ttl\":1,\"proxied\":false}")
+        log "更新子域名, domain=${subdomain}，更新结果=${response}"
         local status=$(echo "$response" | jq -r '.success // ""')
         if [ "$status" = "true" ]; then
-            echo "Domain: ${subdomain}, A record has been updated from ${current_ip} to ${new_ip}"
+            log "Domain: ${subdomain}, A record has been updated from ${current_ip} to ${new_ip}"
             send_msg_by_bot "❤️CloudFlare域名解析更新成功。A记录 ${subdomain} 从 ${current_ip} 更新到 ${new_ip}"
             return 0
         fi
@@ -366,39 +369,40 @@ update_staticip() {
     # 函数：检查命令执行结果
     check_command_result() {
         if [ $? -ne 0 ]; then
-            echo "命令执行失败：$1"
+            log "命令执行失败：$1"
             send_msg_by_bot "⚡️更新LightSail静态IP **失败** ，命令执行失败：$1"
             exit 1
         fi
     }
 
     # 获取绑定指定实例的静态 IP 名称
-    echo "正在查询当前实例及IP绑定..."
+    log "正在查询当前实例及IP绑定..."
     local old_ip_info=$(aws lightsail get-static-ips --region $region --query 'staticIps[?attachedTo==`'$instance_name'`].[name, ipAddress]' --output json)
     check_command_result "无法查询到绑定了实例${instance_name} 的IP"
     local old_ip=$(echo ${old_ip_info} | jq -r '.[][0]')
     local old_ip_addr=$(echo ${old_ip_info} | jq -r '.[][1] // ""')
     if [ -z "${old_ip_addr}" ]; then
-        echo "无法查询到绑定了实例${instance_name} 的IP"
+        log "无法查询到绑定了实例${instance_name} 的IP"
         send_msg_by_bot "更新LightSail静态IP **失败** ，无法查询到绑定了实例${instance_name} 的IP"
         return 1
     fi
-    echo "当前实例 < ${instance_name} > 绑定的ip为ip: ${old_ip}, ${old_ip_addr}"
+    log "当前实例 < ${instance_name} > 绑定的ip为ip: ${old_ip}, ${old_ip_addr}"
 
     # 创建新的静态 IP
-    echo "正在创建新IP，并绑定实例..."
+    log "正在创建新IP..."
     sleep 1
     local new_ip=$(aws lightsail allocate-static-ip --static-ip-name ${new_ip_name} --region $region --query 'operations[0].resourceName' --output text)
     check_command_result "无法创建新的静态 IP"
 
     # 绑定新的静态 IP,并默认将旧IP解除绑定
+    log "正在绑定新IP($new_ip) 到实例 ${instance_name}..."
     sleep 1
     aws lightsail attach-static-ip --static-ip-name $new_ip --instance-name $instance_name --region $region
     check_command_result "无法绑定新的静态 IP"
 
 
     # 删除旧的静态 IP
-    echo "正在删除旧IP..."
+    log "正在删除旧IP..."
     sleep 1
     aws lightsail release-static-ip --static-ip-name $old_ip --region $region
     #check_command_result "无法删除旧的静态 IP"
@@ -407,10 +411,11 @@ update_staticip() {
     g_new_ip_addr=$(aws lightsail get-static-ips --region $region --query 'staticIps[?attachedTo==`'$instance_name'`].ipAddress' --output text)
 
     if [[ $g_new_ip_addr =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
-        echo "公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
+        log "公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
         send_msg_by_bot "❤️LightSail公网 IP 更新成功！实例: ${instance_name}, IP changed from ${old_ip_addr} to ${g_new_ip_addr}"
         return 0
     else
+        log "公网 IP 更新失败！实例: ${instance_name}"
         send_msg_by_bot "⚡️LightSail公网 IP 更新失败！实例: ${instance_name}"
     fi
 
@@ -428,21 +433,21 @@ remote_update_ip_dns() {
 
     update_dns $domain_test $random_ip
     if [ $? -ne 0 ]; then
-        echo "CloudFlare 测试域名执行失败，可能是CloudFlare异常"
+        log "CloudFlare 测试域名执行失败，可能是CloudFlare异常"
         send_msg_by_bot "⚡️**操作失败**，CloudFlare 测试域名执行失败，可能是CloudFlare异常"
         return 1
     fi
 
     update_staticip
     if [ $? -ne 0 ]; then
-        echo "remote_update_ip_dns命令执行失败： update_staticip"
+        log "remote_update_ip_dns命令执行失败： update_staticip"
         send_msg_by_bot "⚡️**操作失败**，LightSail更新公网IP失败。"
         return 1
     fi
     # 更新host域名
     update_dns $domain_host $g_new_ip_addr
     if [ $? -ne 0 ]; then
-        echo "remote_update_ip_dns命令执行失败： update_dns"
+        log "remote_update_ip_dns命令执行失败： update_dns"
         send_msg_by_bot "⚡️**操作失败**，CloudFlare域名解析修改失败。"
         return 1
     fi
@@ -450,7 +455,7 @@ remote_update_ip_dns() {
     # 更新proxy域名
     update_dns $domain_proxy_new $g_new_ip_addr $domain_proxy_last
     if [ $? -ne 0 ]; then
-        echo "remote_update_ip_dns命令执行失败： update_dns"
+        log "remote_update_ip_dns命令执行失败： update_dns"
         send_msg_by_bot "⚡️**操作失败**，CloudFlare域名解析修改失败。"
         return 1
     fi
