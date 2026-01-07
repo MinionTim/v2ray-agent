@@ -564,7 +564,7 @@ install(){
 EOF
     fi
 
-    cron_command="*/15 * * * * /bin/bash /etc/v2ray-agent/healthKeeper.sh check >> /etc/v2ray-agent/logs/log_health_keeper.log 2>&1"
+    cron_command="*/2 * * * * /bin/bash /etc/v2ray-agent/healthKeeper.sh check >> /etc/v2ray-agent/logs/log_health_keeper.log 2>&1"
     existing_cron_jobs=$(crontab -l 2>/dev/null)
     if ! echo "$existing_cron_jobs" | grep -qF "$cron_command"; then
         (crontab -l 2>/dev/null; echo "$cron_command") | crontab -
