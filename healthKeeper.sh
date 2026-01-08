@@ -48,7 +48,7 @@ check_ip() {
 
     # 输出结果
     echo "HTTP Status Code: $status_code"
-    echo "TCP Status: $tcp_status"
+    echo "TCP Status: $tcp_status, Time: $(date +"%Y-%m-%d %H:%M:%S")"
     if [ "$tcp_status" == "success" ]; then
         ret_inside=0
         inside_tcp="国内: TCP可用"
@@ -98,9 +98,9 @@ check_ip() {
             echo "Check IP Bloacked. Retrying..."
             check_ip
         fi
-
+    
     elif [ "$ret_inside" == "0" ] && [ "$ret_outside" == "0" ]; then
-        echo "Server check heathy. Good ^_^ "
+        echo "Server check healthy. Good ^_^"
         if [ "${CHECK_FAILED}" == "1" ]; then
             send_msg_by_bot "❤️恭喜，节点已检测通过，继续保持～ 节点: $domain:$port"
             CHECK_FAILED=0
