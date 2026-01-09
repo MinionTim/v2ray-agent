@@ -105,8 +105,7 @@ check_ip() {
             send_msg_by_bot "❤️恭喜，节点已检测通过，继续保持～ 节点: $domain:$port"
             CHECK_FAILED=0
         fi
-        local d=$(date +%H:%M)
-        if [[ "${d}" > "08:00" && "${d}" < "08:30" ]] || [[ "${d}" > "12:00" && "${d}" < "12:30" ]] || [[ "${d}" > "18:00" && "${d}" < "18:30" ]]; then
+        if should_send_daily_keepalive; then
             send_msg_by_bot "❤️当前节点检测通过，继续保持～ 节点: $domain:$port"
         fi
 
@@ -114,6 +113,8 @@ check_ip() {
         echo "Server down / firewall blocked, please check"
         send_msg_by_bot "⚡️节点检测异常，原因可能是服务异常。稍后会自动重试，请登录服务器检查。当前受阻节点: $domain:$port"
     fi
+    echo "check complete, $(date +"%Y-%m-%d %H:%M:%S")"
+    echo ""
 }
 
 change_config() {
@@ -197,7 +198,7 @@ update_subscribe() {
     local user=$(jq -r .inbounds[0].settings.clients[0].email /etc/v2ray-agent/xray/conf/02_VLESS_TCP_inbounds.json | awk -F "[-]" '{print $1}')
     # 指定需要检查文件状态，同时文件已存在，则不执行后续逻辑。
     if [ "$1" == "needcheck" ] && [ -n "/etc/v2ray-agent/subscribe_local/default/${user}.autogenerate" ]; then
-        echo "File exists. update subscribe canceled. file=/etc/v2ray-agent/subscribe_local/default/${user}.autogenerate"
+        # echo "File exists. update subscribe canceled. file=/etc/v2ray-agent/subscribe_local/default/${user}.autogenerate"
         return
     fi
 
@@ -615,8 +616,51 @@ _test_run() {
     # ensure_server_configs
 }
 
+get_cron_interval_minutes() {
+    local cron_line
+    cron_line=$(crontab -l 2>/dev/null | grep "/etc/v2ray-agent/healthKeeper.sh check" | head -n1)
+    if [[ -z "${cron_line}" ]]; then
+        echo 30
+        return
+    fi
+    local minute_field
+    minute_field=$(echo "${cron_line}" | awk '{print $1}')
+    if [[ "${minute_field}" =~ ^\*/([0-9]+)$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return
+    fi
+    if [[ "${minute_field}" =~ ^[0-9]+$ ]]; then
+        echo 60
+        return
+    fi
+    echo 30
+}
+
+should_send_daily_keepalive() {
+    local now_h now_m now_min
+    IFS=":" read -r now_h now_m <<<"$(date +%H:%M)"
+    now_min=$((10#$now_h * 60 + 10#$now_m))
+
+    local interval
+    interval=$(get_cron_interval_minutes)
+
+    # 每天 8:00, 12:00, 18:00 发送一次
+    local slots=("08:00" "12:00" "18:00")
+    local slot
+    for slot in "${slots[@]}"; do
+        local sh sm smin emin
+        IFS=":" read -r sh sm <<<"${slot}"
+        smin=$((10#$sh * 60 + 10#$sm))
+        emin=$((smin + interval))
+        if (( now_min >= smin && now_min < emin )); then
+            return 0
+        fi
+    done
+    return 1
+}
+
 check_root() {
-    [ "$(id -u)" != 0 ] && error "\n必须以root方式运行脚本，可以输入 sudo su 切换用户\n" && exit 1;
+  [ "$(id -u)" != 0 ] && error "\n必须以root方式运行脚本，可以输入 sudo su 切换用户\n" && exit 1;
 }
 
 
