@@ -677,7 +677,7 @@ usage() {
     echo "  c | changeconfig: update configs, e.g. uuid, ip, domain, port."
     echo "  t | test: test server configs, e.g. lightsail, cloudflare."
     echo "  i | install: install the script."
-    echo "  u | uninstall: uninstall the script."
+    echo "  r | uninstall: uninstall the script."
 }
 
 main() {
@@ -685,14 +685,14 @@ main() {
     OPTION=$(tr 'A-Z' 'a-z' <<< "$1")
     case "$OPTION" in
         h | help ) usage; exit 0;;
-        K | check ) ensure_server_configs; update_subscribe needcheck; check_ip; exit 0;;
+        k | check ) ensure_server_configs; update_subscribe needcheck; check_ip; exit 0;;
         s | subscribe ) update_subscribe; exit 0;;
         u | uuid ) change_uuid; exit 0;;
         c | changeconfig ) ensure_server_configs; change_config;  exit 0;;
         t | test ) ensure_server_configs; test_configs; exit 0;;
         i | install ) install; exit 0;;
 		x | temptest ) ensure_server_configs; _test_run; exit 0;;
-        u | uninstall ) uninstall; exit 0;;
+        r | uninstall ) uninstall; exit 0;;
         * ) echo "unknown options \"$OPTION\", please refer to the belowing..."; usage; exit 0;;
     esac
 }
