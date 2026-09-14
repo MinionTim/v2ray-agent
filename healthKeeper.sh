@@ -465,7 +465,7 @@ remote_update_ip_dns() {
 
 send_msg_by_bot() {
     local message="$@"
-    local webhook_url="https://www.feishu.cn/flow/api/trigger-webhook/${G_FEISHU_TOKEN}"
+    local webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/${G_FEISHU_TOKEN}"
     local topic="VPS Info"
 
     # 检查消息内容是否为空
@@ -473,7 +473,7 @@ send_msg_by_bot() {
         echo "错误: 消息内容不能为空"
         return 1
     fi
-    local json_payload=$(jq -n --arg topic "$topic" --arg content "$message" --arg msg_type "text" '{"topic":$topic, "content":$content, "msg_type":$msg_type}')
+    local json_payload=$(jq -n --arg title "$topic" --arg content "$message" '{"msg_type":"post", "content":{"post":{"zh_cn":{"title":$title, "content":[[{"tag":"text", "text":$content}]]}}}}')
     local response=$(curl -s -X POST -H 'Content-type: application/json' --data "$json_payload" "$webhook_url")
 
     # 如果返回的 code 为 0 则表示成功
