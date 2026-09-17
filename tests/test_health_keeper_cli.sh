@@ -37,10 +37,18 @@ assert_contains "r | uninstall )"
 assert_contains 'echo "  r | uninstall: uninstall the script."'
 assert_contains 'https://open.feishu.cn/open-apis/bot/v2/hook/${G_FEISHU_TOKEN}'
 assert_contains 'local topic="VPS Info"'
-assert_contains '--arg content "$message"'
-assert_contains '{"msg_type":"post", "content":{"post":{"zh_cn":{"title":$title, "content":[[{"tag":"text", "text":$content}]]}}}}'
-if grep -Fq -- '--arg content "${topic}\n${message}"' "$script"; then
-    fail "content should not include topic prefix"
+assert_contains 'local topic_text="[#${topic}]"'
+assert_contains 'local content="**${topic_text}**"'
+assert_contains '$'\''\n'\''"${message}"'
+assert_contains '{"msg_type":"interactive", "card":{"elements":[{"tag":"div", "text":{"tag":"lark_md", "content":$content}}]}}'
+if grep -Fq -- '"title"' "$script"; then
+    fail "rich text payload should not contain a title field"
+fi
+if grep -Fq -- '"style"' "$script"; then
+    fail "custom bot webhook rejects text style field (19002)"
+fi
+if grep -Fq -- '"msg_type":"post"' "$script"; then
+    fail "webhook post messages cannot render bold, use interactive card"
 fi
 
 echo "healthKeeper CLI dispatch checks passed"

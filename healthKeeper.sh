@@ -467,13 +467,19 @@ send_msg_by_bot() {
     local message="$@"
     local webhook_url="https://open.feishu.cn/open-apis/bot/v2/hook/${G_FEISHU_TOKEN}"
     local topic="VPS Info"
+    # topic 固定展示格式：[#topic]，加粗
+    local topic_text="[#${topic}]"
 
     # 检查消息内容是否为空
     if [[ -z "$message" ]]; then
         echo "错误: 消息内容不能为空"
         return 1
     fi
-    local json_payload=$(jq -n --arg title "$topic" --arg content "$message" '{"msg_type":"post", "content":{"post":{"zh_cn":{"title":$title, "content":[[{"tag":"text", "text":$content}]]}}}}')
+    # 卡片消息：不带 title 字段，格式化后的 topic 作为正文首行，并用 ** 加粗
+    # 注意：自定义机器人 webhook 的富文本不支持 text 标签 style 字段（19002）、也不支持 md 标签（10002），
+    # 因此加粗只能走卡片的 lark_md
+    local content="**${topic_text}**"$'\n'"${message}"
+    local json_payload=$(jq -n --arg content "$content" '{"msg_type":"interactive", "card":{"elements":[{"tag":"div", "text":{"tag":"lark_md", "content":$content}}]}}')
     local response=$(curl -s -X POST -H 'Content-type: application/json' --data "$json_payload" "$webhook_url")
 
     # 如果返回的 code 为 0 则表示成功
